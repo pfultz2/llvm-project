@@ -17,18 +17,19 @@ namespace tidy {
 namespace bugprone {
 
 void EnumToIntCheck::registerMatchers(MatchFinder *Finder) {
-  auto ImplicitEnumToInt = implicitCastExpr(hasCastKind(CK_IntegralCast),
-                 hasSourceExpression(expr(hasType(enumType()))),
-                 anyOf(hasParent(callExpr()), hasParent(cxxConstructExpr()))
-                 // hasParent(anyOf(callExpr(), cxxConstructExpr()))
-                 );
+  auto ImplicitEnumToInt = implicitCastExpr(
+      hasCastKind(CK_IntegralCast),
+      hasSourceExpression(expr(hasType(enumType()))),
+      anyOf(hasParent(callExpr()), hasParent(cxxConstructExpr()))
+  );
   Finder->addMatcher(ImplicitEnumToInt.bind("x"), this);
 }
 
 void EnumToIntCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
   const auto *MatchedExpr = Result.Nodes.getNodeAs<Expr>("x");
-  diag(MatchedExpr->getBeginLoc(), "Enum is implictly converted to an integral.")
+  diag(MatchedExpr->getBeginLoc(),
+       "Enum is implictly converted to an integral.")
       << MatchedExpr->getSourceRange();
 }
 
