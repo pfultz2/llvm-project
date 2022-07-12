@@ -118,6 +118,11 @@ Improvements to clang-tidy
 New checks
 ^^^^^^^^^^
 
+- New :doc:`bugprone-enum-to-int
+  <clang-tidy/checks/bugprone/enum-to-int>` check.
+
+  Finds implicit conversion of enum to an integral type.
+
 - New :doc:`bugprone-shared-ptr-array-mismatch <clang-tidy/checks/bugprone/shared-ptr-array-mismatch>` check.
 
   Finds initializations of C++ shared pointers to non-array type that are initialized with an array.
