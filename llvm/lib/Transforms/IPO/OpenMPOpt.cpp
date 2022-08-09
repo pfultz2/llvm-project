@@ -3340,6 +3340,9 @@ struct AAKernelInfoFunction : AAKernelInfo {
   }
 
   bool changeToSPMDMode(Attributor &A, ChangeStatus &Changed) {
+    if (!mayContainParallelRegion())
+      return false;
+
     auto &OMPInfoCache = static_cast<OMPInformationCache &>(A.getInfoCache());
 
     if (!SPMDCompatibilityTracker.isAssumed()) {
@@ -4428,10 +4431,10 @@ struct AAFoldRuntimeCallCallSiteReturned : AAFoldRuntimeCall {
     if (!SimplifiedValue)
       return Str + std::string("none");
 
-    if (!SimplifiedValue.getValue())
+    if (!SimplifiedValue.value())
       return Str + std::string("nullptr");
 
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(SimplifiedValue.getValue()))
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(SimplifiedValue.value()))
       return Str + std::to_string(CI->getSExtValue());
 
     return Str + std::string("unknown");
@@ -4456,7 +4459,7 @@ struct AAFoldRuntimeCallCallSiteReturned : AAFoldRuntimeCall {
         [&](const IRPosition &IRP, const AbstractAttribute *AA,
             bool &UsedAssumedInformation) -> Optional<Value *> {
           assert((isValidState() ||
-                  (SimplifiedValue && SimplifiedValue.getValue() == nullptr)) &&
+                  (SimplifiedValue && SimplifiedValue.value() == nullptr)) &&
                  "Unexpected invalid state!");
 
           if (!isAtFixpoint()) {
@@ -4805,7 +4808,7 @@ void OpenMPOpt::registerAAs(bool IsModulePass) {
       if (auto *LI = dyn_cast<LoadInst>(&I)) {
         bool UsedAssumedInformation = false;
         A.getAssumedSimplified(IRPosition::value(*LI), /* AA */ nullptr,
-                               UsedAssumedInformation);
+                               UsedAssumedInformation, AA::Interprocedural);
       } else if (auto *SI = dyn_cast<StoreInst>(&I)) {
         A.getOrCreateAAFor<AAIsDead>(IRPosition::value(*SI));
       }

@@ -251,10 +251,12 @@ OPTIONS
 
   Reads from standard input, converts contained
   :doc:`Symbolizer Markup </SymbolizerMarkupFormat>` into human-readable form,
-  and prints the results to standard output. Presently, only the following
-  markup elements are supported:
+  and prints the results to standard output. The following markup elements are
+  not yet supported:
 
-  * ``{{symbol}}``
+  * ``{{bt}}``
+  * ``{{hexdict}}``
+  * ``{{dumpfile}}``
 
 .. _llvm-symbolizer-opt-f:
 

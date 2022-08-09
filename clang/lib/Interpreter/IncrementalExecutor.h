@@ -15,14 +15,12 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 
 #include <memory>
 
 namespace llvm {
 class Error;
-class Module;
 namespace orc {
 class LLJIT;
 class ThreadSafeContext;
@@ -32,6 +30,7 @@ class ThreadSafeContext;
 namespace clang {
 
 struct PartialTranslationUnit;
+class TargetInfo;
 
 class IncrementalExecutor {
   using CtorDtorIterator = llvm::orc::CtorDtorIterator;
@@ -45,12 +44,13 @@ public:
   enum SymbolNameKind { IRName, LinkerName };
 
   IncrementalExecutor(llvm::orc::ThreadSafeContext &TSC, llvm::Error &Err,
-                      const llvm::Triple &Triple);
+                      const clang::TargetInfo &TI);
   ~IncrementalExecutor();
 
   llvm::Error addModule(PartialTranslationUnit &PTU);
   llvm::Error removeModule(PartialTranslationUnit &PTU);
   llvm::Error runCtors() const;
+  llvm::Error cleanUp();
   llvm::Expected<llvm::JITTargetAddress>
   getSymbolAddress(llvm::StringRef Name, SymbolNameKind NameKind) const;
   llvm::orc::LLJIT *getExecutionEngine() const { return Jit.get(); }

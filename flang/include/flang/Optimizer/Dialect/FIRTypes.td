@@ -333,6 +333,7 @@ def fir_RecordType : FIR_Type<"Record", "type"> {
     }
     unsigned getNumFields() { return getTypeList().size(); }
     unsigned getNumLenParams() { return getLenParamList().size(); }
+    bool isDependentType() { return getNumLenParams(); }
 
     void finalize(llvm::ArrayRef<TypePair> lenPList,
                   llvm::ArrayRef<TypePair> typeList);
@@ -451,22 +452,19 @@ def fir_SequenceType : FIR_Type<"Sequence", "array"> {
 
   let extraClassDeclaration = [{
     using Extent = int64_t;
-    using Shape = llvm::SmallVector<Extent, 8>;
+    using Shape = llvm::SmallVector<Extent>;
     using ShapeRef = llvm::ArrayRef<int64_t>;
     unsigned getConstantRows() const;
 
     // The number of dimensions of the sequence
     unsigned getDimension() const { return getShape().size(); }
 
-    // Is the interior of the sequence constant? Check if the array is
-    // one of constant shape (`array<C...xCxT>`), unknown shape
-    // (`array<*xT>`), or rows with shape and ending with column(s) of
-    // unknown extent (`array<C...xCx?...x?xT>`).
-    bool hasConstantInterior() const;
-
-    // Is the shape of the sequence constant?
-    bool hasConstantShape() const {
-      return getConstantRows() == getDimension();
+    // Is the shape of the sequence dynamic?
+    bool hasDynamicExtents() const {
+      for(const auto d : getShape())
+        if (d == getUnknownExtent())
+          return true;
+      return false;
     }
 
     // Does the sequence have unknown shape? (`array<* x T>`)

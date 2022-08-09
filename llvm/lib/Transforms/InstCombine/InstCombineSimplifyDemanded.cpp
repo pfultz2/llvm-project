@@ -397,7 +397,7 @@ Value *InstCombinerImpl::SimplifyDemandedUseBits(Value *V, APInt DemandedMask,
       }
     }
   }
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case Instruction::ZExt: {
     unsigned SrcBitWidth = I->getOperand(0)->getType()->getScalarSizeInBits();
 
@@ -498,7 +498,7 @@ Value *InstCombinerImpl::SimplifyDemandedUseBits(Value *V, APInt DemandedMask,
         return Builder.CreateSExt(Or, VTy);
       }
     }
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case Instruction::Sub: {
     APInt DemandedFromOps;
     if (simplifyOperandsBasedOnUnusedHighBits(DemandedFromOps))
@@ -925,7 +925,7 @@ Value *InstCombinerImpl::SimplifyDemandedUseBits(Value *V, APInt DemandedMask,
         Optional<Value *> V = targetSimplifyDemandedUseBitsIntrinsic(
             *II, DemandedMask, Known, KnownBitsComputed);
         if (V)
-          return V.getValue();
+          return V.value();
         break;
       }
       }
@@ -1636,7 +1636,7 @@ Value *InstCombinerImpl::SimplifyDemandedVectorElts(Value *V,
           *II, DemandedElts, UndefElts, UndefElts2, UndefElts3,
           simplifyAndSetOp);
       if (V)
-        return V.getValue();
+        return V.value();
       break;
     }
     } // switch on IntrinsicID

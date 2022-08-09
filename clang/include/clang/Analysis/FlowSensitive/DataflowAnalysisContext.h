@@ -18,11 +18,13 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/TypeOrdering.h"
+#include "clang/Analysis/FlowSensitive/ControlFlowContext.h"
 #include "clang/Analysis/FlowSensitive/Solver.h"
 #include "clang/Analysis/FlowSensitive/StorageLocation.h"
 #include "clang/Analysis/FlowSensitive/Value.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/Support/Compiler.h"
 #include <cassert>
 #include <memory>
 #include <type_traits>
@@ -89,12 +91,10 @@ public:
     return *cast<T>(Vals.back().get());
   }
 
-  /// Returns a stable storage location appropriate for `Type`.
+  /// Returns a new storage location appropriate for `Type`.
   ///
-  /// Requirements:
-  ///
-  ///  `Type` must not be null.
-  StorageLocation &getStableStorageLocation(QualType Type);
+  /// A null `Type` is interpreted as the pointee type of `std::nullptr_t`.
+  StorageLocation &createStorageLocation(QualType Type);
 
   /// Returns a stable storage location for `D`.
   StorageLocation &getStableStorageLocation(const VarDecl &D);
@@ -137,24 +137,9 @@ public:
     return It == ExprToLoc.end() ? nullptr : It->second;
   }
 
-  /// Assigns `Loc` as the storage location of the `this` pointee.
-  ///
-  /// Requirements:
-  ///
-  ///  The `this` pointee must not be assigned a storage location.
-  void setThisPointeeStorageLocation(StorageLocation &Loc) {
-    assert(ThisPointeeLoc == nullptr);
-    ThisPointeeLoc = &Loc;
-  }
-
-  /// Returns the storage location assigned to the `this` pointee or null if the
-  /// `this` pointee has no assigned storage location.
-  StorageLocation *getThisPointeeStorageLocation() const {
-    return ThisPointeeLoc;
-  }
-
   /// Returns a pointer value that represents a null pointer. Calls with
   /// `PointeeType` that are canonically equivalent will return the same result.
+  /// A null `PointeeType` can be used for the pointee of `std::nullptr_t`.
   PointerValue &getOrCreateNullPointerValue(QualType PointeeType);
 
   /// Returns a symbolic boolean value that models a boolean literal equal to
@@ -250,7 +235,24 @@ public:
   /// `Val2` imposed by the flow condition.
   bool equivalentBoolValues(BoolValue &Val1, BoolValue &Val2);
 
+  LLVM_DUMP_METHOD void dumpFlowCondition(AtomicBoolValue &Token);
+
+  /// Returns the `ControlFlowContext` registered for `F`, if any. Otherwise,
+  /// returns null.
+  const ControlFlowContext *getControlFlowContext(const FunctionDecl *F);
+
 private:
+  struct NullableQualTypeDenseMapInfo : private llvm::DenseMapInfo<QualType> {
+    static QualType getEmptyKey() {
+      // Allow a NULL `QualType` by using a different value as the empty key.
+      return QualType::getFromOpaquePtr(reinterpret_cast<Type *>(1));
+    }
+
+    using DenseMapInfo::getHashValue;
+    using DenseMapInfo::getTombstoneKey;
+    using DenseMapInfo::isEqual;
+  };
+
   /// Adds all constraints of the flow condition identified by `Token` and all
   /// of its transitive dependencies to `Constraints`. `VisitedTokens` is used
   /// to track tokens of flow conditions that were already visited by recursive
@@ -259,17 +261,18 @@ private:
       AtomicBoolValue &Token, llvm::DenseSet<BoolValue *> &Constraints,
       llvm::DenseSet<AtomicBoolValue *> &VisitedTokens);
 
-  /// Returns the result of satisfiability checking on `Constraints`.
-  /// Possible return values are:
-  /// - `Satisfiable`: There exists a satisfying assignment for `Constraints`.
-  /// - `Unsatisfiable`: There is no satisfying assignment for `Constraints`.
-  /// - `TimedOut`: The solver gives up on finding a satisfying assignment.
+  /// Returns the outcome of satisfiability checking on `Constraints`.
+  /// Possible outcomes are:
+  /// - `Satisfiable`: A satisfying assignment exists and is returned.
+  /// - `Unsatisfiable`: A satisfying assignment does not exist.
+  /// - `TimedOut`: The search for a satisfying assignment was not completed.
   Solver::Result querySolver(llvm::DenseSet<BoolValue *> Constraints);
 
   /// Returns true if the solver is able to prove that there is no satisfying
   /// assignment for `Constraints`
   bool isUnsatisfiable(llvm::DenseSet<BoolValue *> Constraints) {
-    return querySolver(std::move(Constraints)) == Solver::Result::Unsatisfiable;
+    return querySolver(std::move(Constraints)).getStatus() ==
+           Solver::Result::Status::Unsatisfiable;
   }
 
   /// Returns a boolean value as a result of substituting `Val` and its sub
@@ -303,15 +306,14 @@ private:
   llvm::DenseMap<const ValueDecl *, StorageLocation *> DeclToLoc;
   llvm::DenseMap<const Expr *, StorageLocation *> ExprToLoc;
 
-  StorageLocation *ThisPointeeLoc = nullptr;
-
   // Null pointer values, keyed by the canonical pointee type.
   //
   // FIXME: The pointer values are indexed by the pointee types which are
   // required to initialize the `PointeeLoc` field in `PointerValue`. Consider
   // creating a type-independent `NullPointerValue` without a `PointeeLoc`
   // field.
-  llvm::DenseMap<QualType, PointerValue *> NullPointerVals;
+  llvm::DenseMap<QualType, PointerValue *, NullableQualTypeDenseMapInfo>
+      NullPointerVals;
 
   AtomicBoolValue &TrueVal;
   AtomicBoolValue &FalseVal;
@@ -323,6 +325,10 @@ private:
   llvm::DenseMap<std::pair<BoolValue *, BoolValue *>, DisjunctionValue *>
       DisjunctionVals;
   llvm::DenseMap<BoolValue *, NegationValue *> NegationVals;
+  llvm::DenseMap<std::pair<BoolValue *, BoolValue *>, ImplicationValue *>
+      ImplicationVals;
+  llvm::DenseMap<std::pair<BoolValue *, BoolValue *>, BiconditionalValue *>
+      BiconditionalVals;
 
   // Flow conditions are tracked symbolically: each unique flow condition is
   // associated with a fresh symbolic variable (token), bound to the clause that
@@ -339,6 +345,8 @@ private:
   llvm::DenseMap<AtomicBoolValue *, llvm::DenseSet<AtomicBoolValue *>>
       FlowConditionDeps;
   llvm::DenseMap<AtomicBoolValue *, BoolValue *> FlowConditionConstraints;
+
+  llvm::DenseMap<const FunctionDecl *, ControlFlowContext> FunctionContexts;
 };
 
 } // namespace dataflow

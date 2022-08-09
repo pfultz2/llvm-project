@@ -180,11 +180,15 @@ static OpenMPDirectiveKindExWrapper parseOpenMPDirectiveKind(Parser &P) {
       {OMPD_master, OMPD_taskloop, OMPD_master_taskloop},
       {OMPD_masked, OMPD_taskloop, OMPD_masked_taskloop},
       {OMPD_master_taskloop, OMPD_simd, OMPD_master_taskloop_simd},
+      {OMPD_masked_taskloop, OMPD_simd, OMPD_masked_taskloop_simd},
       {OMPD_parallel, OMPD_master, OMPD_parallel_master},
       {OMPD_parallel, OMPD_masked, OMPD_parallel_masked},
       {OMPD_parallel_master, OMPD_taskloop, OMPD_parallel_master_taskloop},
+      {OMPD_parallel_masked, OMPD_taskloop, OMPD_parallel_masked_taskloop},
       {OMPD_parallel_master_taskloop, OMPD_simd,
-       OMPD_parallel_master_taskloop_simd}};
+       OMPD_parallel_master_taskloop_simd},
+      {OMPD_parallel_masked_taskloop, OMPD_simd,
+       OMPD_parallel_masked_taskloop_simd}};
   enum { CancellationPoint = 0, DeclareReduction = 1, TargetData = 2 };
   Token Tok = P.getCurToken();
   OpenMPDirectiveKindExWrapper DKind =
@@ -255,7 +259,7 @@ static DeclarationName parseOpenMPReductionId(Parser &P) {
   case tok::identifier: // identifier
     if (!WithOperator)
       break;
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   default:
     P.Diag(Tok.getLocation(), diag::err_omp_expected_reduction_identifier);
     P.SkipUntil(tok::colon, tok::r_paren, tok::annot_pragma_openmp_end,
@@ -957,6 +961,10 @@ static bool checkExtensionProperty(Parser &P, SourceLocation Loc,
 
   if (TIProperty.Kind ==
       TraitProperty::implementation_extension_allow_templates)
+    return true;
+
+  if (TIProperty.Kind ==
+      TraitProperty::implementation_extension_bind_to_declaration)
     return true;
 
   auto IsMatchExtension = [](OMPTraitProperty &TP) {
@@ -1876,11 +1884,11 @@ void Parser::ParseOMPDeclareTargetClauses(
         if (DevTypeData) {
           if (DeviceTypeLoc.isValid()) {
             // We already saw another device_type clause, diagnose it.
-            Diag(DevTypeData.getValue().Loc,
+            Diag(DevTypeData.value().Loc,
                  diag::warn_omp_more_one_device_type_clause);
             break;
           }
-          switch (static_cast<OpenMPDeviceType>(DevTypeData.getValue().Type)) {
+          switch (static_cast<OpenMPDeviceType>(DevTypeData.value().Type)) {
           case OMPC_DEVICE_TYPE_any:
             DTCI.DT = OMPDeclareTargetDeclAttr::DT_Any;
             break;
@@ -2387,6 +2395,9 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
   case OMPD_parallel_master_taskloop:
   case OMPD_parallel_master_taskloop_simd:
   case OMPD_masked_taskloop:
+  case OMPD_masked_taskloop_simd:
+  case OMPD_parallel_masked_taskloop:
+  case OMPD_parallel_masked_taskloop_simd:
   case OMPD_distribute:
   case OMPD_target_update:
   case OMPD_distribute_parallel_for:
@@ -2750,7 +2761,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
     }
     HasAssociatedStatement = false;
     // Fall through for further analysis.
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case OMPD_parallel:
   case OMPD_simd:
   case OMPD_tile:
@@ -2786,8 +2797,11 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
   case OMPD_master_taskloop:
   case OMPD_masked_taskloop:
   case OMPD_master_taskloop_simd:
+  case OMPD_masked_taskloop_simd:
   case OMPD_parallel_master_taskloop:
+  case OMPD_parallel_masked_taskloop:
   case OMPD_parallel_master_taskloop_simd:
+  case OMPD_parallel_masked_taskloop_simd:
   case OMPD_distribute:
   case OMPD_distribute_parallel_for:
   case OMPD_distribute_parallel_for_simd:
@@ -3239,7 +3253,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
           << getOpenMPDirectiveName(DKind) << getOpenMPClauseName(CKind) << 0;
       ErrorFound = true;
     }
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case OMPC_if:
     Clause = ParseOpenMPSingleExprWithArgClause(DKind, CKind, WrongDirective);
     break;
@@ -3337,7 +3351,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
       Clause = ParseOpenMPClause(CKind, WrongDirective);
       break;
     }
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   case OMPC_init:
   case OMPC_use:
     Clause = ParseOpenMPInteropClause(CKind, WrongDirective);
@@ -3620,20 +3634,20 @@ OMPClause *Parser::ParseOpenMPSimpleClause(OpenMPClauseKind Kind,
   if (!Val || ParseOnly)
     return nullptr;
   if (getLangOpts().OpenMP < 51 && Kind == OMPC_default &&
-      (static_cast<DefaultKind>(Val.getValue().Type) == OMP_DEFAULT_private ||
-       static_cast<DefaultKind>(Val.getValue().Type) ==
+      (static_cast<DefaultKind>(Val.value().Type) == OMP_DEFAULT_private ||
+       static_cast<DefaultKind>(Val.value().Type) ==
            OMP_DEFAULT_firstprivate)) {
-    Diag(Val.getValue().LOpen, diag::err_omp_invalid_dsa)
-        << getOpenMPClauseName(static_cast<DefaultKind>(Val.getValue().Type) ==
+    Diag(Val.value().LOpen, diag::err_omp_invalid_dsa)
+        << getOpenMPClauseName(static_cast<DefaultKind>(Val.value().Type) ==
                                        OMP_DEFAULT_private
                                    ? OMPC_private
                                    : OMPC_firstprivate)
         << getOpenMPClauseName(OMPC_default) << "5.1";
     return nullptr;
   }
-  return Actions.ActOnOpenMPSimpleClause(
-      Kind, Val.getValue().Type, Val.getValue().TypeLoc, Val.getValue().LOpen,
-      Val.getValue().Loc, Val.getValue().RLoc);
+  return Actions.ActOnOpenMPSimpleClause(Kind, Val.value().Type,
+                                         Val.value().TypeLoc, Val.value().LOpen,
+                                         Val.value().Loc, Val.value().RLoc);
 }
 
 /// Parsing of OpenMP clauses like 'ordered'.

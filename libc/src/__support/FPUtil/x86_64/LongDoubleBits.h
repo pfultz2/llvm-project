@@ -60,6 +60,10 @@ template <> struct FPBits<long double> {
 
   UIntType get_mantissa() const { return bits & FloatProp::MANTISSA_MASK; }
 
+  UIntType get_explicit_mantissa() const {
+    return bits & (FloatProp::MANTISSA_MASK | FloatProp::EXPLICIT_BIT_MASK);
+  }
+
   void set_unbiased_exponent(UIntType expVal) {
     expVal =
         (expVal << (FloatProp::BIT_WIDTH - 1 - FloatProp::EXPONENT_WIDTH)) &
@@ -96,7 +100,7 @@ template <> struct FPBits<long double> {
   FPBits() : bits(0) {}
 
   template <typename XType,
-            cpp::EnableIfType<cpp::IsSame<long double, XType>::Value, int> = 0>
+            cpp::enable_if_t<cpp::is_same_v<long double, XType>, int> = 0>
   explicit FPBits(XType x) : bits(__llvm_libc::bit_cast<UIntType>(x)) {
     // bits starts uninitialized, and setting it to a long double only
     // overwrites the first 80 bits. This clears those upper bits.
@@ -104,7 +108,7 @@ template <> struct FPBits<long double> {
   }
 
   template <typename XType,
-            cpp::EnableIfType<cpp::IsSame<XType, UIntType>::Value, int> = 0>
+            cpp::enable_if_t<cpp::is_same_v<XType, UIntType>, int> = 0>
   explicit FPBits(XType x) : bits(x) {}
 
   operator long double() { return __llvm_libc::bit_cast<long double>(bits); }
