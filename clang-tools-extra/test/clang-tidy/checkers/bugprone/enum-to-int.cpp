@@ -9,7 +9,7 @@ struct bar {
 void foo(int i);
 void f1() {
   foo(e1);
-  // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
+  // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
 }
 void f2() {
   foo(static_cast<int>(e1));
@@ -20,9 +20,9 @@ void f3() {
 }
 void f4() {
   bar a(e1);
-  // CHECK-MESSAGES: :[[@LINE-1]]:11: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
+  // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
 }
 void f5() {
   auto a = bar{e1};
-  // CHECK-MESSAGES: :[[@LINE-1]]:18: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
+  // CHECK-MESSAGES: :[[@LINE-1]]:16: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
 }
