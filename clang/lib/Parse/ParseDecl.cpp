@@ -2078,10 +2078,8 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
           << (Fixit ? FixItHint::CreateInsertion(D.getBeginLoc(), "_Noreturn ")
                     : FixItHint());
     }
-  }
 
-  // Check to see if we have a function *definition* which must have a body.
-  if (D.isFunctionDeclarator()) {
+    // Check to see if we have a function *definition* which must have a body.
     if (Tok.is(tok::equal) && NextToken().is(tok::code_completion)) {
       cutOffParsing();
       Actions.CodeCompleteAfterFunctionEquals(D);
@@ -3268,13 +3266,14 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         return;
       }
 
-      if (getCurScope()->getFnParent() || getCurScope()->getBlockParent())
-        CCC = Sema::PCC_LocalDeclarationSpecifiers;
-      else if (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate)
+      // Class context can appear inside a function/block, so prioritise that.
+      if (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate)
         CCC = DSContext == DeclSpecContext::DSC_class ? Sema::PCC_MemberTemplate
                                                       : Sema::PCC_Template;
       else if (DSContext == DeclSpecContext::DSC_class)
         CCC = Sema::PCC_Class;
+      else if (getCurScope()->getFnParent() || getCurScope()->getBlockParent())
+        CCC = Sema::PCC_LocalDeclarationSpecifiers;
       else if (CurParsedObjCImpl)
         CCC = Sema::PCC_ObjCImplementation;
 
