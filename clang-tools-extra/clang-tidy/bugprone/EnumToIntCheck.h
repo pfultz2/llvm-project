@@ -15,7 +15,7 @@ namespace clang {
 namespace tidy {
 namespace bugprone {
 
-/// FIXME: Write a short description.
+/// Diagnoses instances of an enum implicitly converted to an integer
 ///
 /// For the user-facing documentation see:
 /// http://clang.llvm.org/extra/clang-tidy/checks/bugprone/enum-to-int.html

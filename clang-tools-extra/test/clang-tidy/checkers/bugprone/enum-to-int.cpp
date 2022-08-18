@@ -1,4 +1,4 @@
-// RUN: %check_clang_tidy %s bugprone-enum-to-int %t
+// RUN: %check_clang_tidy -std=c++11-or-later --fix-notes %s bugprone-enum-to-int %t
 
 enum A { e1,
          e2 };
@@ -9,10 +9,13 @@ struct bar {
 void foo(int i);
 void f1() {
   foo(e1);
-  // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-1]]:7: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:7: note: insert an explicit cast to silence this warning
+  // CHECK-NOTES: static_cast<int>( )
+  // CHECK-FIXES: foo(static_cast<int>(e1));
 }
 void f2() {
-  foo(static_cast<int>(e1));
+  foo(static_cast<int>(e2));
 }
 void f3() {
   int i = e1;
@@ -20,9 +23,15 @@ void f3() {
 }
 void f4() {
   bar a(e1);
-  // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-1]]:9: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:9: note: insert an explicit cast to silence this warning
+  // CHECK-NOTES: static_cast<int>( )
+  // CHECK-FIXES: bar a(static_cast<int>(e1));
 }
 void f5() {
   auto a = bar{e1};
-  // CHECK-MESSAGES: :[[@LINE-1]]:16: warning: Enum is implictly converted to an integral. [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-1]]:16: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:16: note: insert an explicit cast to silence this warning
+  // CHECK-NOTES: static_cast<int>( )
+  // CHECK-FIXES: auto a = bar{static_cast<int>(e1)};
 }

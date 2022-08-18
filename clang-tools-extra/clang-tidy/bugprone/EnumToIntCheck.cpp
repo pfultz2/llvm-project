@@ -9,6 +9,7 @@
 #include "EnumToIntCheck.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Lex/Lexer.h"
 
 using namespace clang::ast_matchers;
 
@@ -25,11 +26,19 @@ void EnumToIntCheck::registerMatchers(MatchFinder *Finder) {
 }
 
 void EnumToIntCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
+  SourceManager &SM = *Result.SourceManager;
   const auto *MatchedExpr = Result.Nodes.getNodeAs<Expr>("x");
   diag(MatchedExpr->getBeginLoc(),
-       "Enum is implictly converted to an integral.")
+       "enum is implictly converted to an integral")
       << MatchedExpr->getSourceRange();
+  auto Note = diag(MatchedExpr->getBeginLoc(), "insert an explicit cast to silence this warning", DiagnosticIDs::Note);
+  if (Result.Context->getLangOpts().CPlusPlus11) {
+    Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "static_cast<int>(");
+    Note << FixItHint::CreateInsertion(Lexer::getLocForEndOfToken(MatchedExpr->getEndLoc(), 0, SM, getLangOpts()), ")");
+  }
+  else {
+    Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "(int)");
+  }
 }
 
 } // namespace bugprone
