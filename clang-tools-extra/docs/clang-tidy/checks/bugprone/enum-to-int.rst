@@ -11,8 +11,8 @@ prevent bugs. There can be many reasons why ``enum`` cannot be replaced with
 
 This check will diagnose similiar implicit conversions whne using ``enum`` to
 find the same class of bugs. Currently it will only warn on function or
-constructor calls as such conversions are not clear to the usr, but this
-could be expanded in the future.
+constructor calls, or return statements as such conversions are not always
+clear to the user, but this could be expanded in the future.
 
 Examples:
 
