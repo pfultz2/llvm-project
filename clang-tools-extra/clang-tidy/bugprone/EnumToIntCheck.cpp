@@ -21,7 +21,7 @@ void EnumToIntCheck::registerMatchers(MatchFinder *Finder) {
   auto ImplicitEnumToInt = implicitCastExpr(
       hasCastKind(CK_IntegralCast),
       hasSourceExpression(expr(hasType(enumType()))),
-      anyOf(hasParent(callExpr()), hasParent(cxxConstructExpr())));
+      anyOf(hasParent(callExpr()), hasParent(cxxConstructExpr()), hasParent(returnStmt())));
   Finder->addMatcher(ImplicitEnumToInt.bind("x"), this);
 }
 

@@ -35,3 +35,10 @@ void f5() {
   // CHECK-NOTES: static_cast<int>( )
   // CHECK-FIXES: auto a = bar{static_cast<int>(e1)};
 }
+int f6() {
+  return e1;
+  // CHECK-NOTES: :[[@LINE-1]]:10: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:10: note: insert an explicit cast to silence this warning
+  // CHECK-NOTES: static_cast<int>( )
+  // CHECK-FIXES: return static_cast<int>(e1);
+}
