@@ -27,22 +27,23 @@ void EnumToIntCheck::registerMatchers(MatchFinder *Finder) {
 }
 
 void EnumToIntCheck::check(const MatchFinder::MatchResult &Result) {
-  const auto *MatchedExpr = Result.Nodes.getNodeAs<Expr>("x");
-  diag(MatchedExpr->getBeginLoc(), "enum is implictly converted to an integral")
-      << MatchedExpr->getSourceRange();
-  auto Note = diag(MatchedExpr->getBeginLoc(),
-                   "insert an explicit cast to silence this warning",
-                   DiagnosticIDs::Note);
-  if (Result.Context->getLangOpts().CPlusPlus11) {
-    SourceManager &SM = *Result.SourceManager;
-    Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(),
-                                       "static_cast<int>(");
-    Note << FixItHint::CreateInsertion(
-        Lexer::getLocForEndOfToken(MatchedExpr->getEndLoc(), 0, SM,
-                                   getLangOpts()),
-        ")");
-  } else {
-    Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "(int)");
+  if (const auto *MatchedExpr = Result.Nodes.getNodeAs<Expr>("x")) {
+    diag(MatchedExpr->getBeginLoc(), "enum is implictly converted to an integral")
+        << MatchedExpr->getSourceRange();
+    auto Note = diag(MatchedExpr->getBeginLoc(),
+                     "insert an explicit cast",
+                     DiagnosticIDs::Note);
+    if (Result.Context->getLangOpts().CPlusPlus11) {
+      SourceManager &SM = *Result.SourceManager;
+      Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(),
+                                         "static_cast<int>(");
+      Note << FixItHint::CreateInsertion(
+          Lexer::getLocForEndOfToken(MatchedExpr->getEndLoc(), 0, SM,
+                                     getLangOpts()),
+          ")");
+    } else {
+      Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "(int)");
+    }
   }
 }
 
