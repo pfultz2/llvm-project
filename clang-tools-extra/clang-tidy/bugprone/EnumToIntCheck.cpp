@@ -8,8 +8,10 @@
 
 #include "EnumToIntCheck.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Lex/Lexer.h"
+#include <iostream>
 
 using namespace clang::ast_matchers;
 
@@ -33,16 +35,17 @@ void EnumToIntCheck::check(const MatchFinder::MatchResult &Result) {
     auto Note = diag(MatchedExpr->getBeginLoc(),
                      "insert an explicit cast",
                      DiagnosticIDs::Note);
+    std::string TypeName = MatchedExpr->getType().getAsString();
     if (Result.Context->getLangOpts().CPlusPlus11) {
       SourceManager &SM = *Result.SourceManager;
       Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(),
-                                         "static_cast<int>(");
+                                         "static_cast<" + TypeName + ">(");
       Note << FixItHint::CreateInsertion(
           Lexer::getLocForEndOfToken(MatchedExpr->getEndLoc(), 0, SM,
                                      getLangOpts()),
           ")");
     } else {
-      Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "(int)");
+      Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "(" + TypeName + ")");
     }
   }
 }

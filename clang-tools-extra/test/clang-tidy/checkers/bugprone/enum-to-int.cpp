@@ -3,10 +3,15 @@
 enum A { e1,
          e2 };
 
+  enum B : unsigned int {
+    e3, e4
+  };
+
 struct bar {
   bar(int);
 };
 void foo(int i);
+void foo_unsigned(unsigned int i);
 void f1() {
   foo(e1);
   // CHECK-NOTES: :[[@LINE-1]]:7: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
@@ -41,4 +46,25 @@ int f6() {
   // CHECK-NOTES: :[[@LINE-2]]:10: note: insert an explicit cast
   // CHECK-NOTES: static_cast<int>( )
   // CHECK-FIXES: return static_cast<int>(e1);
+}
+void f7() {
+  foo_unsigned(e1);
+  // CHECK-NOTES: :[[@LINE-1]]:16: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:16: note: insert an explicit cast
+  // CHECK-NOTES: static_cast<unsigned int>( )
+  // CHECK-FIXES: foo_unsigned(static_cast<unsigned int>(e1));
+}
+void f8() {
+  foo(e4);
+  // CHECK-NOTES: :[[@LINE-1]]:7: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:7: note: insert an explicit cast
+  // CHECK-NOTES: static_cast<int>( )
+  // CHECK-FIXES: foo(static_cast<int>(e4));
+}
+void f9() {
+  foo_unsigned(e4);
+  // CHECK-NOTES: :[[@LINE-1]]:16: warning: enum is implictly converted to an integral [bugprone-enum-to-int]
+  // CHECK-NOTES: :[[@LINE-2]]:16: note: insert an explicit cast
+  // CHECK-NOTES: static_cast<unsigned int>( )
+  // CHECK-FIXES: foo_unsigned(static_cast<unsigned int>(e4));
 }
