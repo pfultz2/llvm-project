@@ -77,6 +77,10 @@ Operation *Operation::create(Location location, OperationName name,
   char *mallocMem = reinterpret_cast<char *>(malloc(byteSize + prefixByteSize));
   void *rawMem = mallocMem + prefixByteSize;
 
+  // Populate default attributes.
+  if (Optional<RegisteredOperationName> info = name.getRegisteredInfo())
+    info->populateDefaultAttrs(attributes);
+
   // Create the new Operation.
   Operation *op = ::new (rawMem) Operation(
       location, name, numResults, numSuccessors, numRegions,
@@ -889,17 +893,30 @@ LogicalResult OpTrait::impl::verifySameOperandsAndResultType(Operation *op) {
 
   auto type = op->getResult(0).getType();
   auto elementType = getElementTypeOrSelf(type);
+  Attribute encoding = nullptr;
+  if (auto rankedType = dyn_cast<RankedTensorType>(type))
+    encoding = rankedType.getEncoding();
   for (auto resultType : llvm::drop_begin(op->getResultTypes())) {
     if (getElementTypeOrSelf(resultType) != elementType ||
         failed(verifyCompatibleShape(resultType, type)))
       return op->emitOpError()
              << "requires the same type for all operands and results";
+    if (encoding)
+      if (auto rankedType = dyn_cast<RankedTensorType>(resultType);
+          encoding != rankedType.getEncoding())
+        return op->emitOpError()
+               << "requires the same encoding for all operands and results";
   }
   for (auto opType : op->getOperandTypes()) {
     if (getElementTypeOrSelf(opType) != elementType ||
         failed(verifyCompatibleShape(opType, type)))
       return op->emitOpError()
              << "requires the same type for all operands and results";
+    if (encoding)
+      if (auto rankedType = dyn_cast<RankedTensorType>(opType);
+          encoding != rankedType.getEncoding())
+        return op->emitOpError()
+               << "requires the same encoding for all operands and results";
   }
   return success();
 }
@@ -1150,14 +1167,14 @@ impl::foldCastInterfaceOp(Operation *op, ArrayRef<Attribute> attrOperands,
 LogicalResult impl::verifyCastInterfaceOp(
     Operation *op, function_ref<bool(TypeRange, TypeRange)> areCastCompatible) {
   auto resultTypes = op->getResultTypes();
-  if (llvm::empty(resultTypes))
+  if (resultTypes.empty())
     return op->emitOpError()
            << "expected at least one result for cast operation";
 
   auto operandTypes = op->getOperandTypes();
   if (!areCastCompatible(operandTypes, resultTypes)) {
     InFlightDiagnostic diag = op->emitOpError("operand type");
-    if (llvm::empty(operandTypes))
+    if (operandTypes.empty())
       diag << "s []";
     else if (llvm::size(operandTypes) == 1)
       diag << " " << *operandTypes.begin();

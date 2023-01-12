@@ -13,6 +13,7 @@ import re
 _warningFlags = [
   '-Werror',
   '-Wall',
+  '-Wctad-maybe-unsupported',
   '-Wextra',
   '-Wshadow',
   '-Wundef',
@@ -81,6 +82,7 @@ DEFAULT_PARAMETERS = [
             default=lambda cfg: next(s for s in reversed(_allStandards) if getStdFlag(cfg, s)),
             actions=lambda std: [
               AddFeature(std),
+              AddSubstitution('%{cxx_std}', re.sub('\+','x', std)),
               AddCompileFlag(lambda cfg: getStdFlag(cfg, std)),
             ]),
 
@@ -175,7 +177,6 @@ DEFAULT_PARAMETERS = [
               AddCompileFlag('-D_LIBCPP_ENABLE_EXPERIMENTAL'),
             ] if experimental else [
               AddFeature('libcpp-has-no-incomplete-format'),
-              AddFeature('libcpp-has-no-incomplete-ranges')
             ]),
 
   Parameter(name='long_tests', choices=[True, False], type=bool, default=True,

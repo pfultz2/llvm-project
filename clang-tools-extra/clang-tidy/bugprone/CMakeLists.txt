@@ -46,6 +46,7 @@ add_clang_library(clangTidyBugproneModule
   SizeofContainerCheck.cpp
   SizeofExpressionCheck.cpp
   SpuriouslyWakeUpFunctionsCheck.cpp
+  StandaloneEmptyCheck.cpp
   StringConstructorCheck.cpp
   StringIntegerAssignmentCheck.cpp
   StringLiteralWithEmbeddedNulCheck.cpp
@@ -55,6 +56,7 @@ add_clang_library(clangTidyBugproneModule
   SuspiciousMemoryComparisonCheck.cpp
   SuspiciousMemsetUsageCheck.cpp
   SuspiciousMissingCommaCheck.cpp
+  SuspiciousReallocUsageCheck.cpp
   SuspiciousSemicolonCheck.cpp
   SuspiciousStringCompareCheck.cpp
   SwappedArgumentsCheck.cpp

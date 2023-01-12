@@ -74,6 +74,8 @@ class RISCVAsmParser : public MCTargetAsmParser {
   bool isRV32E() const { return getSTI().hasFeature(RISCV::FeatureRV32E); }
 
   RISCVTargetStreamer &getTargetStreamer() {
+    assert(getParser().getStreamer().getTargetStreamer() &&
+           "do not have a target streamer");
     MCTargetStreamer &TS = *getParser().getStreamer().getTargetStreamer();
     return static_cast<RISCVTargetStreamer &>(TS);
   }
@@ -89,8 +91,9 @@ class RISCVAsmParser : public MCTargetAsmParser {
                                uint64_t &ErrorInfo,
                                bool MatchingInlineAsm) override;
 
-  bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc) override;
-  OperandMatchResultTy tryParseRegister(unsigned &RegNo, SMLoc &StartLoc,
+  bool parseRegister(MCRegister &RegNo, SMLoc &StartLoc,
+                     SMLoc &EndLoc) override;
+  OperandMatchResultTy tryParseRegister(MCRegister &RegNo, SMLoc &StartLoc,
                                         SMLoc &EndLoc) override;
 
   bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
@@ -178,6 +181,7 @@ class RISCVAsmParser : public MCTargetAsmParser {
   bool parseDirectiveOption();
   bool parseDirectiveAttribute();
   bool parseDirectiveInsn(SMLoc L);
+  bool parseDirectiveVariantCC();
 
   void setFeatureBits(uint64_t Feature, StringRef FeatureString) {
     if (!(getSTI().getFeatureBits()[Feature])) {
@@ -1308,14 +1312,14 @@ static bool matchRegisterNameHelper(bool IsRV32E, MCRegister &RegNo,
   return RegNo == RISCV::NoRegister;
 }
 
-bool RISCVAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
+bool RISCVAsmParser::parseRegister(MCRegister &RegNo, SMLoc &StartLoc,
                                    SMLoc &EndLoc) {
   if (tryParseRegister(RegNo, StartLoc, EndLoc) != MatchOperand_Success)
     return Error(StartLoc, "invalid register name");
   return false;
 }
 
-OperandMatchResultTy RISCVAsmParser::tryParseRegister(unsigned &RegNo,
+OperandMatchResultTy RISCVAsmParser::tryParseRegister(MCRegister &RegNo,
                                                       SMLoc &StartLoc,
                                                       SMLoc &EndLoc) {
   const AsmToken &Tok = getParser().getTok();
@@ -2033,6 +2037,8 @@ bool RISCVAsmParser::ParseDirective(AsmToken DirectiveID) {
     return parseDirectiveAttribute();
   if (IDVal == ".insn")
     return parseDirectiveInsn(DirectiveID.getLoc());
+  if (IDVal == ".variant_cc")
+    return parseDirectiveVariantCC();
 
   return true;
 }
@@ -2096,6 +2102,7 @@ bool RISCVAsmParser::parseDirectiveOption() {
                    "unexpected token, expected end of statement");
 
     clearFeatureBits(RISCV::FeatureStdExtC, "c");
+    clearFeatureBits(RISCV::FeatureExtZca, "+experimental-zca");
     return false;
   }
 
@@ -2165,7 +2172,7 @@ bool RISCVAsmParser::parseDirectiveAttribute() {
   TagLoc = Parser.getTok().getLoc();
   if (Parser.getTok().is(AsmToken::Identifier)) {
     StringRef Name = Parser.getTok().getIdentifier();
-    Optional<unsigned> Ret =
+    std::optional<unsigned> Ret =
         ELFAttrs::attrTypeFromString(Name, RISCVAttrs::getRISCVAttributeTags());
     if (!Ret) {
       Error(TagLoc, "attribute name not recognised: " + Name);
@@ -2294,6 +2301,19 @@ bool RISCVAsmParser::parseDirectiveInsn(SMLoc L) {
                                  /*MatchingInlineAsm=*/false);
 }
 
+/// parseDirectiveVariantCC
+///  ::= .variant_cc symbol
+bool RISCVAsmParser::parseDirectiveVariantCC() {
+  StringRef Name;
+  if (getParser().parseIdentifier(Name))
+    return TokError("expected symbol name");
+  if (parseEOL())
+    return false;
+  getTargetStreamer().emitDirectiveVariantCC(
+      *getContext().getOrCreateSymbol(Name));
+  return false;
+}
+
 void RISCVAsmParser::emitToStreamer(MCStreamer &S, const MCInst &Inst) {
   MCInst CInst;
   bool Res = compressInst(CInst, Inst, getSTI(), S.getContext());
@@ -2312,22 +2332,22 @@ void RISCVAsmParser::emitLoadImm(MCRegister DestReg, int64_t Value,
     switch (Inst.getOpndKind()) {
     case RISCVMatInt::Imm:
       emitToStreamer(Out,
-                     MCInstBuilder(Inst.Opc).addReg(DestReg).addImm(Inst.Imm));
+                     MCInstBuilder(Inst.getOpcode()).addReg(DestReg).addImm(Inst.getImm()));
       break;
     case RISCVMatInt::RegX0:
       emitToStreamer(
-          Out, MCInstBuilder(Inst.Opc).addReg(DestReg).addReg(SrcReg).addReg(
+          Out, MCInstBuilder(Inst.getOpcode()).addReg(DestReg).addReg(SrcReg).addReg(
                    RISCV::X0));
       break;
     case RISCVMatInt::RegReg:
       emitToStreamer(
-          Out, MCInstBuilder(Inst.Opc).addReg(DestReg).addReg(SrcReg).addReg(
+          Out, MCInstBuilder(Inst.getOpcode()).addReg(DestReg).addReg(SrcReg).addReg(
                    SrcReg));
       break;
     case RISCVMatInt::RegImm:
       emitToStreamer(
-          Out, MCInstBuilder(Inst.Opc).addReg(DestReg).addReg(SrcReg).addImm(
-                   Inst.Imm));
+          Out, MCInstBuilder(Inst.getOpcode()).addReg(DestReg).addReg(SrcReg).addImm(
+                   Inst.getImm()));
       break;
     }
 

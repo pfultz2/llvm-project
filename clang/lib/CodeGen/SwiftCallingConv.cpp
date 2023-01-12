@@ -124,7 +124,7 @@ void SwiftAggLowering::addTypedData(const RecordDecl *record, CharUnits begin,
                                     const ASTRecordLayout &layout) {
   // Unions are a special case.
   if (record->isUnion()) {
-    for (auto field : record->fields()) {
+    for (auto *field : record->fields()) {
       if (field->isBitField()) {
         addBitFieldData(field, begin, 0);
       } else {
@@ -161,7 +161,7 @@ void SwiftAggLowering::addTypedData(const RecordDecl *record, CharUnits begin,
   }
 
   // Add fields.
-  for (auto field : record->fields()) {
+  for (auto *field : record->fields()) {
     auto fieldOffsetInBits = layout.getFieldOffset(field->getFieldIndex());
     if (field->isBitField()) {
       addBitFieldData(field, begin, fieldOffsetInBits);
@@ -652,7 +652,7 @@ bool swiftcall::shouldPassIndirectly(CodeGenModule &CGM,
 CharUnits swiftcall::getMaximumVoluntaryIntegerSize(CodeGenModule &CGM) {
   // Currently always the size of an ordinary pointer.
   return CGM.getContext().toCharUnitsFromBits(
-           CGM.getContext().getTargetInfo().getPointerWidth(0));
+      CGM.getContext().getTargetInfo().getPointerWidth(LangAS::Default));
 }
 
 CharUnits swiftcall::getNaturalAlignment(CodeGenModule &CGM, llvm::Type *type) {

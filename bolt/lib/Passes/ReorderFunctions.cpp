@@ -243,9 +243,7 @@ void ReorderFunctions::reorder(std::vector<Cluster> &&Clusters,
                      TotalCalls2MB, 100 * TotalCalls2MB / TotalCalls);
 }
 
-namespace {
-
-std::vector<std::string> readFunctionOrderFile() {
+std::vector<std::string> ReorderFunctions::readFunctionOrderFile() {
   std::vector<std::string> FunctionNames;
   std::ifstream FuncsFile(opts::FunctionOrderFile, std::ios::in);
   if (!FuncsFile) {
@@ -259,27 +257,24 @@ std::vector<std::string> readFunctionOrderFile() {
   return FunctionNames;
 }
 
-}
-
 void ReorderFunctions::runOnFunctions(BinaryContext &BC) {
   auto &BFs = BC.getBinaryFunctions();
   if (opts::ReorderFunctions != RT_NONE &&
       opts::ReorderFunctions != RT_EXEC_COUNT &&
       opts::ReorderFunctions != RT_USER) {
-    Cg = buildCallGraph(BC,
-                        [](const BinaryFunction &BF) {
-                          if (!BF.hasProfile())
-                            return true;
-                          if (BF.getState() != BinaryFunction::State::CFG)
-                            return true;
-                          return false;
-                        },
-                        opts::CgFromPerfData,
-                        false, // IncludeColdCalls
-                        opts::ReorderFunctionsUseHotSize,
-                        opts::CgUseSplitHotSize,
-                        opts::UseEdgeCounts,
-                        opts::CgIgnoreRecursiveCalls);
+    Cg = buildCallGraph(
+        BC,
+        [](const BinaryFunction &BF) {
+          if (!BF.hasProfile())
+            return true;
+          if (BF.getState() != BinaryFunction::State::CFG)
+            return true;
+          return false;
+        },
+        opts::CgFromPerfData,
+        /*IncludeSplitCalls=*/false, opts::ReorderFunctionsUseHotSize,
+        opts::CgUseSplitHotSize, opts::UseEdgeCounts,
+        opts::CgIgnoreRecursiveCalls);
     Cg.normalizeArcWeights();
   }
 

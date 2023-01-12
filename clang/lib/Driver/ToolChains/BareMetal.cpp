@@ -39,7 +39,7 @@ static bool findRISCVMultilibs(const Driver &D,
   StringRef Arch = riscv::getRISCVArch(Args, TargetTriple);
   StringRef Abi = tools::riscv::getRISCVABI(Args, TargetTriple);
 
-  if (TargetTriple.getArch() == llvm::Triple::riscv64) {
+  if (TargetTriple.isRISCV64()) {
     Multilib Imac = makeMultilib("").flag("+march=rv64imac").flag("+mabi=lp64");
     Multilib Imafdc = makeMultilib("/rv64imafdc/lp64d")
                           .flag("+march=rv64imafdc")
@@ -57,7 +57,7 @@ static bool findRISCVMultilibs(const Driver &D,
     Result.Multilibs = MultilibSet().Either(Imac, Imafdc);
     return Result.Multilibs.select(Flags, Result.SelectedMultilib);
   }
-  if (TargetTriple.getArch() == llvm::Triple::riscv32) {
+  if (TargetTriple.isRISCV32()) {
     Multilib Imac =
         makeMultilib("").flag("+march=rv32imac").flag("+mabi=ilp32");
     Multilib I =
@@ -103,6 +103,7 @@ BareMetal::BareMetal(const Driver &D, const llvm::Triple &Triple,
   if (!SysRoot.empty()) {
     llvm::sys::path::append(SysRoot, "lib");
     getFilePaths().push_back(std::string(SysRoot));
+    getLibraryPaths().push_back(std::string(SysRoot));
   }
 }
 
@@ -140,8 +141,7 @@ static bool isAArch64BareMetal(const llvm::Triple &Triple) {
 }
 
 static bool isRISCVBareMetal(const llvm::Triple &Triple) {
-  if (Triple.getArch() != llvm::Triple::riscv32 &&
-      Triple.getArch() != llvm::Triple::riscv64)
+  if (!Triple.isRISCV())
     return false;
 
   if (Triple.getVendor() != llvm::Triple::UnknownVendor)
@@ -218,12 +218,21 @@ void BareMetal::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
       DriverArgs.hasArg(options::OPT_nostdincxx))
     return;
 
+  const Driver &D = getDriver();
   std::string SysRoot(computeSysRoot());
   if (SysRoot.empty())
     return;
 
   switch (GetCXXStdlibType(DriverArgs)) {
   case ToolChain::CST_Libcxx: {
+    // First check sysroot/usr/include/c++/v1 if it exists.
+    SmallString<128> TargetDir(SysRoot);
+    llvm::sys::path::append(TargetDir, "usr", "include", "c++", "v1");
+    if (D.getVFS().exists(TargetDir)) {
+      addSystemInclude(DriverArgs, CC1Args, TargetDir.str());
+      break;
+    }
+    // Add generic path if nothing else succeeded so far.
     SmallString<128> Dir(SysRoot);
     llvm::sys::path::append(Dir, "include", "c++", "v1");
     addSystemInclude(DriverArgs, CC1Args, Dir.str());
@@ -235,9 +244,8 @@ void BareMetal::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
     std::error_code EC;
     Generic_GCC::GCCVersion Version = {"", -1, -1, -1, "", "", ""};
     // Walk the subdirs, and find the one with the newest gcc version:
-    for (llvm::vfs::directory_iterator
-             LI = getDriver().getVFS().dir_begin(Dir.str(), EC),
-             LE;
+    for (llvm::vfs::directory_iterator LI = D.getVFS().dir_begin(Dir.str(), EC),
+                                       LE;
          !EC && LI != LE; LI = LI.increment(EC)) {
       StringRef VersionText = llvm::sys::path::filename(LI->path());
       auto CandidateVersion = Generic_GCC::GCCVersion::Parse(VersionText);

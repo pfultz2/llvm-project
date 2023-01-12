@@ -236,6 +236,7 @@ class ThreadPlanStepThrough;
 class ThreadPlanTracer;
 class ThreadSpec;
 class ThreadPostMortemTrace;
+class ThreadedCommunication;
 class Trace;
 class TraceCursor;
 class TraceExporter;
@@ -257,6 +258,7 @@ class TypeNameSpecifierImpl;
 class TypeSummaryImpl;
 class TypeSummaryOptions;
 class TypeSystem;
+class TypeSystemClang;
 class UUID;
 class UnixSignals;
 class Unwind;
@@ -349,6 +351,7 @@ typedef std::shared_ptr<lldb_private::MemoryRegionInfo> MemoryRegionInfoSP;
 typedef std::shared_ptr<lldb_private::Module> ModuleSP;
 typedef std::weak_ptr<lldb_private::Module> ModuleWP;
 typedef std::shared_ptr<lldb_private::ObjectFile> ObjectFileSP;
+typedef std::shared_ptr<lldb_private::ObjectContainer> ObjectContainerSP;
 typedef std::shared_ptr<lldb_private::ObjectFileJITDelegate>
     ObjectFileJITDelegateSP;
 typedef std::weak_ptr<lldb_private::ObjectFileJITDelegate>
@@ -430,6 +433,8 @@ typedef std::shared_ptr<lldb_private::TypeMemberFunctionImpl>
 typedef std::shared_ptr<lldb_private::TypeEnumMemberImpl> TypeEnumMemberImplSP;
 typedef std::shared_ptr<lldb_private::TypeFilterImpl> TypeFilterImplSP;
 typedef std::shared_ptr<lldb_private::TypeSystem> TypeSystemSP;
+typedef std::shared_ptr<lldb_private::TypeSystemClang> TypeSystemClangSP;
+typedef std::weak_ptr<lldb_private::TypeSystem> TypeSystemWP;
 typedef std::shared_ptr<lldb_private::TypeFormatImpl> TypeFormatImplSP;
 typedef std::shared_ptr<lldb_private::TypeNameSpecifierImpl>
     TypeNameSpecifierImplSP;

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/IR/BuiltinDialect.h"
+#include "BuiltinDialectBytecode.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -117,6 +118,7 @@ void BuiltinDialect::initialize() {
 
   auto &blobInterface = addInterface<BuiltinBlobManagerInterface>();
   addInterface<BuiltinOpAsmDialectInterface>(blobInterface);
+  builtin_dialect_detail::addBytecodeInterface(this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -124,7 +126,7 @@ void BuiltinDialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 void ModuleOp::build(OpBuilder &builder, OperationState &state,
-                     Optional<StringRef> name) {
+                     std::optional<StringRef> name) {
   state.addRegion()->emplaceBlock();
   if (name) {
     state.attributes.push_back(builder.getNamedAttr(
@@ -133,7 +135,7 @@ void ModuleOp::build(OpBuilder &builder, OperationState &state,
 }
 
 /// Construct a module from the given context.
-ModuleOp ModuleOp::create(Location loc, Optional<StringRef> name) {
+ModuleOp ModuleOp::create(Location loc, std::optional<StringRef> name) {
   OpBuilder builder(loc->getContext());
   return builder.create<ModuleOp>(loc, name);
 }
@@ -188,7 +190,7 @@ LogicalResult ModuleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult
-UnrealizedConversionCastOp::fold(ArrayRef<Attribute> attrOperands,
+UnrealizedConversionCastOp::fold(FoldAdaptor adaptor,
                                  SmallVectorImpl<OpFoldResult> &foldResults) {
   OperandRange operands = getInputs();
   ResultRange results = getOutputs();

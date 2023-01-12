@@ -20,7 +20,6 @@
 
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -341,13 +340,13 @@ void ThreadSanitizer::initialize(Module &M) {
   }
 
   MemmoveFn =
-      M.getOrInsertFunction("memmove", Attr, IRB.getInt8PtrTy(),
+      M.getOrInsertFunction("__tsan_memmove", Attr, IRB.getInt8PtrTy(),
                             IRB.getInt8PtrTy(), IRB.getInt8PtrTy(), IntptrTy);
   MemcpyFn =
-      M.getOrInsertFunction("memcpy", Attr, IRB.getInt8PtrTy(),
+      M.getOrInsertFunction("__tsan_memcpy", Attr, IRB.getInt8PtrTy(),
                             IRB.getInt8PtrTy(), IRB.getInt8PtrTy(), IntptrTy);
   MemsetFn =
-      M.getOrInsertFunction("memset", Attr, IRB.getInt8PtrTy(),
+      M.getOrInsertFunction("__tsan_memset", Attr, IRB.getInt8PtrTy(),
                             IRB.getInt8PtrTy(), IRB.getInt32Ty(), IntptrTy);
 }
 
@@ -486,7 +485,7 @@ static bool isTsanAtomic(const Instruction *I) {
   if (!SSID)
     return false;
   if (isa<LoadInst>(I) || isa<StoreInst>(I))
-    return SSID.value() != SyncScope::SingleThread;
+    return *SSID != SyncScope::SingleThread;
   return true;
 }
 
@@ -802,7 +801,7 @@ bool ThreadSanitizer::instrumentAtomic(Instruction *I, const DataLayout &DL) {
     }
 
     Value *Res =
-      IRB.CreateInsertValue(UndefValue::get(CASI->getType()), OldVal, 0);
+      IRB.CreateInsertValue(PoisonValue::get(CASI->getType()), OldVal, 0);
     Res = IRB.CreateInsertValue(Res, Success, 1);
 
     I->replaceAllUsesWith(Res);

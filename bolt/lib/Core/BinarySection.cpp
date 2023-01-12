@@ -26,6 +26,8 @@ extern cl::opt<bool> PrintRelocations;
 extern cl::opt<bool> HotData;
 } // namespace opts
 
+uint64_t BinarySection::Count = 0;
+
 bool BinarySection::isELF() const { return BC.isELF(); }
 
 bool BinarySection::isMachO() const { return BC.isMachO(); }
@@ -65,14 +67,14 @@ BinarySection::hash(const BinaryData &BD,
   return Hash;
 }
 
-void BinarySection::emitAsData(MCStreamer &Streamer, StringRef NewName) const {
-  StringRef SectionName = !NewName.empty() ? NewName : getName();
+void BinarySection::emitAsData(MCStreamer &Streamer,
+                               const Twine &SectionName) const {
   StringRef SectionContents = getContents();
   MCSectionELF *ELFSection =
       BC.Ctx->getELFSection(SectionName, getELFType(), getELFFlags());
 
   Streamer.switchSection(ELFSection);
-  Streamer.emitValueToAlignment(getAlignment());
+  Streamer.emitValueToAlignment(getAlign());
 
   if (BC.HasRelocations && opts::HotData && isReordered())
     Streamer.emitLabel(BC.Ctx->getOrCreateSymbol("__hot_data_start"));
@@ -167,7 +169,7 @@ BinarySection::~BinarySection() {
     return;
   }
 
-  if (!isAllocatable() &&
+  if (!isAllocatable() && !hasValidSectionID() &&
       (!hasSectionRef() ||
        OutputContents.data() != getContents(Section).data())) {
     delete[] getOutputData();
@@ -175,20 +177,6 @@ BinarySection::~BinarySection() {
 }
 
 void BinarySection::clearRelocations() { clearList(Relocations); }
-
-void BinarySection::addRelocation(uint64_t Offset, MCSymbol *Symbol,
-                                  uint64_t Type, uint64_t Addend,
-                                  uint64_t Value, bool Pending) {
-  assert(Offset < getSize() && "offset not within section bounds");
-  LLVM_DEBUG(dbgs() << formatv(
-                 "BOLT-DEBUG: addRelocation in {0}, @{1:x} against {2}\n",
-                 getName(), Offset, Symbol->getName()));
-  Relocation R{Offset, Symbol, Type, Addend, Value};
-  if (Pending)
-    PendingRelocations.emplace_back(R);
-  else
-    Relocations.emplace(R);
-}
 
 void BinarySection::print(raw_ostream &OS) const {
   OS << getName() << ", "

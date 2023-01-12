@@ -146,7 +146,7 @@ void DeadCodeAnalysis::initializeSymbolCallables(Operation *top) {
       return;
 
     // Walk the symbol table to check for non-call uses of symbols.
-    Optional<SymbolTable::UseRange> uses =
+    std::optional<SymbolTable::UseRange> uses =
         SymbolTable::getSymbolUses(&symbolTableRegion);
     if (!uses) {
       // If we couldn't gather the symbol uses, conservatively assume that
@@ -318,7 +318,7 @@ static Optional<SmallVector<Attribute>> getOperandValuesImpl(
   for (Value operand : op->getOperands()) {
     const Lattice<ConstantValue> *cv = getLattice(operand);
     // If any of the operands' values are uninitialized, bail out.
-    if (cv->isUninitialized())
+    if (cv->getValue().isUninitialized())
       return {};
     operands.push_back(cv->getValue().getConstantValue());
   }

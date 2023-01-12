@@ -3,10 +3,10 @@
 # RUN: llc -march=amdgcn -mcpu=gfx908 -amdgpu-igrouplp-exact-solver -run-pass=machine-scheduler -o - %s | FileCheck -check-prefix=EXACT %s
 
 --- |
-  define amdgpu_kernel void @sched_group_barrier_2_VMEM_10_ALU_5_MFMA_2_VMEM_WRITE(i32 addrspace(1)* noalias %out, i32 addrspace(1)* noalias %in) { ret void }
-  define amdgpu_kernel void @sched_group_barrier_MFMA_VALU_and_SALU_alternating(i32 addrspace(1)* noalias %out, i32 addrspace(1)* noalias %in) { ret void }
-  define amdgpu_kernel void @sched_group_barrier_2_separate_pipes(i32 addrspace(1)* noalias %out, i32 addrspace(1)* noalias %in) { ret void }
-  define amdgpu_kernel void @sched_group_barrier_3_separate_pipes(i32 addrspace(1)* noalias %out, i32 addrspace(1)* noalias %in) { ret void }
+  define amdgpu_kernel void @sched_group_barrier_2_VMEM_10_ALU_5_MFMA_2_VMEM_WRITE(ptr addrspace(1) noalias %out, ptr addrspace(1) noalias %in) { ret void }
+  define amdgpu_kernel void @sched_group_barrier_MFMA_VALU_and_SALU_alternating(ptr addrspace(1) noalias %out, ptr addrspace(1) noalias %in) { ret void }
+  define amdgpu_kernel void @sched_group_barrier_2_separate_pipes(ptr addrspace(1) noalias %out, ptr addrspace(1) noalias %in) { ret void }
+  define amdgpu_kernel void @sched_group_barrier_3_separate_pipes(ptr addrspace(1) noalias %out, ptr addrspace(1) noalias %in) { ret void }
 
   !0 = distinct !{!0}
   !1 = !{!1, !0}
@@ -211,10 +211,10 @@ body: |
     ; GREEDY: [[DEF:%[0-9]+]]:sreg_64 = IMPLICIT_DEF
     ; GREEDY-NEXT: [[DEF1:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; GREEDY-NEXT: [[GLOBAL_LOAD_DWORD_SADDR:%[0-9]+]]:vgpr_32 = GLOBAL_LOAD_DWORD_SADDR [[DEF]], [[DEF1]], 0, 0, implicit $exec :: (load (s32) from %ir.in, !alias.scope !0, addrspace 1)
-    ; GREEDY-NEXT: [[GLOBAL_LOAD_DWORD_SADDR1:%[0-9]+]]:vgpr_32 = GLOBAL_LOAD_DWORD_SADDR [[DEF]], [[DEF1]], 512, 0, implicit $exec :: (load (s32) from %ir.in, !alias.scope !0, addrspace 1)
     ; GREEDY-NEXT: [[DEF2:%[0-9]+]]:areg_128 = IMPLICIT_DEF
     ; GREEDY-NEXT: [[V_MUL_LO_U32_e64_:%[0-9]+]]:vgpr_32 = nsw V_MUL_LO_U32_e64 [[GLOBAL_LOAD_DWORD_SADDR]], [[GLOBAL_LOAD_DWORD_SADDR]], implicit $exec
     ; GREEDY-NEXT: [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128 = V_MFMA_F32_4X4X1F32_e64 [[DEF1]], [[GLOBAL_LOAD_DWORD_SADDR]], [[DEF2]], 0, 0, 0, implicit $mode, implicit $exec
+    ; GREEDY-NEXT: [[GLOBAL_LOAD_DWORD_SADDR1:%[0-9]+]]:vgpr_32 = GLOBAL_LOAD_DWORD_SADDR [[DEF]], [[DEF1]], 512, 0, implicit $exec :: (load (s32) from %ir.in, !alias.scope !0, addrspace 1)
     ; GREEDY-NEXT: [[V_MFMA_F32_4X4X1F32_e64_1:%[0-9]+]]:areg_128 = V_MFMA_F32_4X4X1F32_e64 [[DEF1]], [[GLOBAL_LOAD_DWORD_SADDR]], [[V_MFMA_F32_4X4X1F32_e64_]], 0, 0, 0, implicit $mode, implicit $exec
     ; GREEDY-NEXT: GLOBAL_STORE_DWORD_SADDR [[DEF1]], [[V_MUL_LO_U32_e64_]], [[DEF]], 0, 0, implicit $exec :: (store (s32) into %ir.out, !noalias !0, addrspace 1)
     ; GREEDY-NEXT: [[V_MUL_LO_U32_e64_1:%[0-9]+]]:vgpr_32 = nsw V_MUL_LO_U32_e64 [[GLOBAL_LOAD_DWORD_SADDR1]], [[GLOBAL_LOAD_DWORD_SADDR1]], implicit $exec
@@ -299,10 +299,10 @@ body: |
     ; GREEDY-NEXT: [[DEF1:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; GREEDY-NEXT: S_NOP 0
     ; GREEDY-NEXT: [[GLOBAL_LOAD_DWORD_SADDR:%[0-9]+]]:vgpr_32 = GLOBAL_LOAD_DWORD_SADDR [[DEF]], [[DEF1]], 0, 0, implicit $exec :: (load (s32) from %ir.in, !alias.scope !0, addrspace 1)
-    ; GREEDY-NEXT: [[GLOBAL_LOAD_DWORD_SADDR1:%[0-9]+]]:vgpr_32 = GLOBAL_LOAD_DWORD_SADDR [[DEF]], [[DEF1]], 512, 0, implicit $exec :: (load (s32) from %ir.in, !alias.scope !0, addrspace 1)
     ; GREEDY-NEXT: [[DEF2:%[0-9]+]]:areg_128 = IMPLICIT_DEF
     ; GREEDY-NEXT: [[V_MUL_LO_U32_e64_:%[0-9]+]]:vgpr_32 = nsw V_MUL_LO_U32_e64 [[GLOBAL_LOAD_DWORD_SADDR]], [[GLOBAL_LOAD_DWORD_SADDR]], implicit $exec
     ; GREEDY-NEXT: [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128 = V_MFMA_F32_4X4X1F32_e64 [[DEF1]], [[GLOBAL_LOAD_DWORD_SADDR]], [[DEF2]], 0, 0, 0, implicit $mode, implicit $exec
+    ; GREEDY-NEXT: [[GLOBAL_LOAD_DWORD_SADDR1:%[0-9]+]]:vgpr_32 = GLOBAL_LOAD_DWORD_SADDR [[DEF]], [[DEF1]], 512, 0, implicit $exec :: (load (s32) from %ir.in, !alias.scope !0, addrspace 1)
     ; GREEDY-NEXT: [[V_MFMA_F32_4X4X1F32_e64_1:%[0-9]+]]:areg_128 = V_MFMA_F32_4X4X1F32_e64 [[DEF1]], [[GLOBAL_LOAD_DWORD_SADDR]], [[V_MFMA_F32_4X4X1F32_e64_]], 0, 0, 0, implicit $mode, implicit $exec
     ; GREEDY-NEXT: GLOBAL_STORE_DWORD_SADDR [[DEF1]], [[V_MUL_LO_U32_e64_]], [[DEF]], 0, 0, implicit $exec :: (store (s32) into %ir.out, !noalias !0, addrspace 1)
     ; GREEDY-NEXT: [[V_MUL_LO_U32_e64_1:%[0-9]+]]:vgpr_32 = nsw V_MUL_LO_U32_e64 [[GLOBAL_LOAD_DWORD_SADDR1]], [[GLOBAL_LOAD_DWORD_SADDR1]], implicit $exec

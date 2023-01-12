@@ -283,7 +283,7 @@ bool ConstantAggregateBuilder::addBits(llvm::APInt Bits, uint64_t OffsetInBits,
 /// Returns a position within Elems and Offsets such that all elements
 /// before the returned index end before Pos and all elements at or after
 /// the returned index begin at or after Pos. Splits elements as necessary
-/// to ensure this. Returns None if we find something we can't split.
+/// to ensure this. Returns std::nullopt if we find something we can't split.
 Optional<size_t> ConstantAggregateBuilder::splitAt(CharUnits Pos) {
   if (Pos >= Size)
     return Offsets.size();
@@ -305,7 +305,7 @@ Optional<size_t> ConstantAggregateBuilder::splitAt(CharUnits Pos) {
 
     // Try to decompose it into smaller constants.
     if (!split(LastAtOrBeforePosIndex, Pos))
-      return None;
+      return std::nullopt;
   }
 }
 
@@ -543,8 +543,8 @@ void ConstantAggregateBuilder::condense(CharUnits Offset,
   }
 
   llvm::Constant *Replacement = buildFrom(
-      CGM, makeArrayRef(Elems).slice(First, Length),
-      makeArrayRef(Offsets).slice(First, Length), Offset, getSize(DesiredTy),
+      CGM, ArrayRef(Elems).slice(First, Length),
+      ArrayRef(Offsets).slice(First, Length), Offset, getSize(DesiredTy),
       /*known to have natural layout=*/false, DesiredTy, false);
   replace(Elems, First, Last, {Replacement});
   replace(Offsets, First, Last, {Offset});
@@ -913,17 +913,16 @@ bool ConstStructBuilder::UpdateStruct(ConstantEmitter &Emitter,
 //                             ConstExprEmitter
 //===----------------------------------------------------------------------===//
 
-static ConstantAddress tryEmitGlobalCompoundLiteral(CodeGenModule &CGM,
-                                                    CodeGenFunction *CGF,
-                                              const CompoundLiteralExpr *E) {
+static ConstantAddress
+tryEmitGlobalCompoundLiteral(ConstantEmitter &emitter,
+                             const CompoundLiteralExpr *E) {
+  CodeGenModule &CGM = emitter.CGM;
   CharUnits Align = CGM.getContext().getTypeAlignInChars(E->getType());
   if (llvm::GlobalVariable *Addr =
           CGM.getAddrOfConstantCompoundLiteralIfEmitted(E))
     return ConstantAddress(Addr, Addr->getValueType(), Align);
 
   LangAS addressSpace = E->getType().getAddressSpace();
-
-  ConstantEmitter emitter(CGM, CGF);
   llvm::Constant *C = emitter.tryEmitForInitializer(E->getInitializer(),
                                                     addressSpace, E->getType());
   if (!C) {
@@ -972,7 +971,7 @@ EmitArrayConstant(CodeGenModule &CGM, llvm::ArrayType *DesiredType,
     if (CommonElementType && NonzeroLength >= 8) {
       llvm::Constant *Initial = llvm::ConstantArray::get(
           llvm::ArrayType::get(CommonElementType, NonzeroLength),
-          makeArrayRef(Elements).take_front(NonzeroLength));
+          ArrayRef(Elements).take_front(NonzeroLength));
       Elements.resize(2);
       Elements[0] = Initial;
     } else {
@@ -1967,7 +1966,9 @@ ConstantLValueEmitter::VisitConstantExpr(const ConstantExpr *E) {
 
 ConstantLValue
 ConstantLValueEmitter::VisitCompoundLiteralExpr(const CompoundLiteralExpr *E) {
-  return tryEmitGlobalCompoundLiteral(CGM, Emitter.CGF, E);
+  ConstantEmitter CompoundLiteralEmitter(CGM, Emitter.CGF);
+  CompoundLiteralEmitter.setInConstantContext(Emitter.isInConstantContext());
+  return tryEmitGlobalCompoundLiteral(CompoundLiteralEmitter, E);
 }
 
 ConstantLValue
@@ -2211,7 +2212,8 @@ void CodeGenModule::setAddrOfConstantCompoundLiteral(
 ConstantAddress
 CodeGenModule::GetAddrOfConstantCompoundLiteral(const CompoundLiteralExpr *E) {
   assert(E->isFileScope() && "not a file-scope compound literal expr");
-  return tryEmitGlobalCompoundLiteral(*this, nullptr, E);
+  ConstantEmitter emitter(*this);
+  return tryEmitGlobalCompoundLiteral(emitter, E);
 }
 
 llvm::Constant *

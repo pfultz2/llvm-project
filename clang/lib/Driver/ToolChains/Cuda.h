@@ -14,7 +14,6 @@
 #include "clang/Driver/Multilib.h"
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/ToolChain.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/VersionTuple.h"
 #include <bitset>
@@ -111,19 +110,6 @@ class LLVM_LIBRARY_VISIBILITY Linker : public Tool {
                      const char *LinkingOutput) const override;
 };
 
-class LLVM_LIBRARY_VISIBILITY OpenMPLinker : public Tool {
- public:
-   OpenMPLinker(const ToolChain &TC)
-       : Tool("NVPTX::OpenMPLinker", "nvlink", TC) {}
-
-   bool hasIntegratedCPP() const override { return false; }
-
-   void ConstructJob(Compilation &C, const JobAction &JA,
-                     const InputInfo &Output, const InputInfoList &Inputs,
-                     const llvm::opt::ArgList &TCArgs,
-                     const char *LinkingOutput) const override;
-};
-
 void getNVPTXTargetFeatures(const Driver &D, const llvm::Triple &Triple,
                             const llvm::opt::ArgList &Args,
                             std::vector<StringRef> &Features);
@@ -136,8 +122,7 @@ namespace toolchains {
 class LLVM_LIBRARY_VISIBILITY CudaToolChain : public ToolChain {
 public:
   CudaToolChain(const Driver &D, const llvm::Triple &Triple,
-                const ToolChain &HostTC, const llvm::opt::ArgList &Args,
-                const Action::OffloadKind OK);
+                const ToolChain &HostTC, const llvm::opt::ArgList &Args);
 
   const llvm::Triple *getAuxTriple() const override {
     return &HostTC.getTriple();
@@ -198,12 +183,14 @@ public:
   const ToolChain &HostTC;
   CudaInstallationDetector CudaInstallation;
 
+  /// Uses nvptx-arch tool to get arch of the system GPU. Will return error
+  /// if unable to find one.
+  virtual Expected<SmallVector<std::string>>
+  getSystemGPUArchs(const llvm::opt::ArgList &Args) const override;
+
 protected:
   Tool *buildAssembler() const override;  // ptxas
   Tool *buildLinker() const override;     // fatbinary (ok, not really a linker)
-
-private:
-  const Action::OffloadKind OK;
 };
 
 } // end namespace toolchains

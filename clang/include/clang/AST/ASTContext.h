@@ -14,42 +14,30 @@
 #ifndef LLVM_CLANG_AST_ASTCONTEXT_H
 #define LLVM_CLANG_AST_ASTCONTEXT_H
 
-#include "clang/AST/ASTContextAllocate.h"
 #include "clang/AST/ASTFwd.h"
 #include "clang/AST/CanonicalType.h"
 #include "clang/AST/CommentCommandTraits.h"
 #include "clang/AST/ComparisonCategories.h"
 #include "clang/AST/Decl.h"
-#include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/RawCommentList.h"
 #include "clang/AST/TemplateName.h"
-#include "clang/AST/Type.h"
-#include "clang/Basic/AddressSpaces.h"
-#include "clang/Basic/AttrKinds.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
-#include "clang/Basic/Linkage.h"
 #include "clang/Basic/NoSanitizeList.h"
-#include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/ProfileList.h"
 #include "clang/Basic/SourceLocation.h"
-#include "clang/Basic/Specifiers.h"
-#include "clang/Basic/TargetCXXABI.h"
 #include "clang/Basic/XRayLists.h"
-#include "llvm/ADT/APSInt.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/MapVector.h"
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -57,22 +45,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/TinyPtrVector.h"
-#include "llvm/ADT/Triple.h"
-#include "llvm/ADT/iterator_range.h"
-#include "llvm/Support/AlignOf.h"
-#include "llvm/Support/Allocator.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/TypeSize.h"
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <iterator>
-#include <memory>
-#include <string>
-#include <type_traits>
-#include <utility>
-#include <vector>
 
 namespace llvm {
 
@@ -246,6 +219,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
     TemplateSpecializationTypes;
   mutable llvm::FoldingSet<ParenType> ParenTypes{GeneralTypesLog2InitSize};
   mutable llvm::FoldingSet<UsingType> UsingTypes;
+  mutable llvm::FoldingSet<TypedefType> TypedefTypes;
   mutable llvm::FoldingSet<ElaboratedType> ElaboratedTypes{
       GeneralTypesLog2InitSize};
   mutable llvm::FoldingSet<DependentNameType> DependentNameTypes;
@@ -638,9 +612,6 @@ private:
   /// The current C++ ABI.
   std::unique_ptr<CXXABI> ABI;
   CXXABI *createCXXABI(const TargetInfo &T);
-
-  /// The logical -> physical address space map.
-  const LangASMap *AddrSpaceMap = nullptr;
 
   /// Address space map mangling must be used with language specific
   /// address spaces (e.g. OpenCL/CUDA)
@@ -1366,6 +1337,9 @@ public:
   CanQualType getDecayedType(CanQualType T) const {
     return CanQualType::CreateUnsafe(getDecayedType((QualType) T));
   }
+  /// Return the uniqued reference to a specified decay from the original
+  /// type to the decayed type.
+  QualType getDecayedType(QualType Orig, QualType Decayed) const;
 
   /// Return the uniqued reference to the atomic type for the specified
   /// type.
@@ -1613,11 +1587,11 @@ public:
   QualType getBTFTagAttributedType(const BTFTypeTagAttr *BTFAttr,
                                    QualType Wrapped);
 
-  QualType getSubstTemplateTypeParmType(const TemplateTypeParmType *Replaced,
-                                        QualType Replacement,
+  QualType getSubstTemplateTypeParmType(QualType Replacement,
+                                        Decl *AssociatedDecl, unsigned Index,
                                         Optional<unsigned> PackIndex) const;
-  QualType getSubstTemplateTypeParmPackType(
-                                          const TemplateTypeParmType *Replaced,
+  QualType getSubstTemplateTypeParmPackType(Decl *AssociatedDecl,
+                                            unsigned Index, bool Final,
                                             const TemplateArgument &ArgPack);
 
   QualType
@@ -1634,7 +1608,7 @@ public:
                                          ArrayRef<TemplateArgument> Args) const;
 
   QualType getTemplateSpecializationType(TemplateName T,
-                                         const TemplateArgumentListInfo &Args,
+                                         ArrayRef<TemplateArgumentLoc> Args,
                                          QualType Canon = QualType()) const;
 
   TypeSourceInfo *
@@ -1655,10 +1629,9 @@ public:
                                 const IdentifierInfo *Name,
                                 QualType Canon = QualType()) const;
 
-  QualType getDependentTemplateSpecializationType(ElaboratedTypeKeyword Keyword,
-                                                  NestedNameSpecifier *NNS,
-                                                  const IdentifierInfo *Name,
-                                    const TemplateArgumentListInfo &Args) const;
+  QualType getDependentTemplateSpecializationType(
+      ElaboratedTypeKeyword Keyword, NestedNameSpecifier *NNS,
+      const IdentifierInfo *Name, ArrayRef<TemplateArgumentLoc> Args) const;
   QualType getDependentTemplateSpecializationType(
       ElaboratedTypeKeyword Keyword, NestedNameSpecifier *NNS,
       const IdentifierInfo *Name, ArrayRef<TemplateArgument> Args) const;
@@ -1711,9 +1684,9 @@ public:
   /// Return a ObjCObjectPointerType type for the given ObjCObjectType.
   QualType getObjCObjectPointerType(QualType OIT) const;
 
-  /// GCC extension.
-  QualType getTypeOfExprType(Expr *e) const;
-  QualType getTypeOfType(QualType t) const;
+  /// C2x feature and GCC extension.
+  QualType getTypeOfExprType(Expr *E, TypeOfKind Kind) const;
+  QualType getTypeOfType(QualType QT, TypeOfKind Kind) const;
 
   QualType getReferenceQualifiedType(const Expr *e) const;
 
@@ -2198,10 +2171,14 @@ public:
                                         const IdentifierInfo *Name) const;
   TemplateName getDependentTemplateName(NestedNameSpecifier *NNS,
                                         OverloadedOperatorKind Operator) const;
-  TemplateName getSubstTemplateTemplateParm(TemplateTemplateParmDecl *param,
-                                            TemplateName replacement) const;
-  TemplateName getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
-                                        const TemplateArgument &ArgPack) const;
+  TemplateName getSubstTemplateTemplateParm(TemplateName replacement,
+                                            Decl *AssociatedDecl,
+                                            unsigned Index,
+                                            Optional<unsigned> PackIndex) const;
+  TemplateName getSubstTemplateTemplateParmPack(const TemplateArgument &ArgPack,
+                                                Decl *AssociatedDecl,
+                                                unsigned Index,
+                                                bool Final) const;
 
   enum GetBuiltinTypeError {
     /// No error
@@ -2313,7 +2290,7 @@ public:
 
   Optional<CharUnits> getTypeSizeInCharsIfKnown(QualType Ty) const {
     if (Ty->isIncompleteType() || Ty->isDependentType())
-      return None;
+      return std::nullopt;
     return getTypeSizeInChars(Ty);
   }
 
@@ -2372,6 +2349,9 @@ public:
   /// alignment attribute.
   bool isAlignmentRequired(const Type *T) const;
   bool isAlignmentRequired(QualType T) const;
+
+  /// More type predicates useful for type checking/promotion
+  bool isPromotableIntegerType(QualType T) const; // C99 6.3.1.1p2
 
   /// Return the "preferred" alignment of the specified type \p T for
   /// the current target, in bits.
@@ -2538,6 +2518,9 @@ public:
     return getCanonicalType(T1) == getCanonicalType(T2);
   }
 
+  /// Determine whether the given expressions \p X and \p Y are equivalent.
+  bool hasSameExpr(const Expr *X, const Expr *Y) const;
+
   /// Return this type as a completely-unqualified array type,
   /// capturing the qualifiers in \p Quals.
   ///
@@ -2562,8 +2545,8 @@ public:
 
   bool hasSameNullabilityTypeQualifier(QualType SubT, QualType SuperT,
                                        bool IsParam) const {
-    auto SubTnullability = SubT->getNullability(*this);
-    auto SuperTnullability = SuperT->getNullability(*this);
+    auto SubTnullability = SubT->getNullability();
+    auto SuperTnullability = SuperT->getNullability();
     if (SubTnullability.has_value() == SuperTnullability.has_value()) {
       // Neither has nullability; return true
       if (!SubTnullability)
@@ -2663,6 +2646,11 @@ public:
   /// template.
   bool hasSameTemplateName(const TemplateName &X, const TemplateName &Y) const;
 
+  /// Determine whether two Friend functions are different because constraints
+  /// that refer to an enclosing template, according to [temp.friend] p9.
+  bool FriendsDifferByConstraints(const FunctionDecl *X,
+                                  const FunctionDecl *Y) const;
+
   /// Determine whether the two declarations refer to the same entity.
   bool isSameEntity(const NamedDecl *X, const NamedDecl *Y) const;
 
@@ -2731,6 +2719,10 @@ public:
   /// Return number of constant array elements.
   uint64_t getConstantArrayElementCount(const ConstantArrayType *CA) const;
 
+  /// Return number of elements initialized in an ArrayInitLoopExpr.
+  uint64_t
+  getArrayInitLoopExprElementCount(const ArrayInitLoopExpr *AILE) const;
+
   /// Perform adjustment on the parameter type of a function.
   ///
   /// This routine adjusts the given parameter type @p T to the actual
@@ -2788,10 +2780,6 @@ public:
   /// long double and double on AArch64 will return 0).
   int getFloatingTypeSemanticOrder(QualType LHS, QualType RHS) const;
 
-  unsigned getTargetAddressSpace(QualType T) const;
-
-  unsigned getTargetAddressSpace(Qualifiers Q) const;
-
   unsigned getTargetAddressSpace(LangAS AS) const;
 
   LangAS getLangASForBuiltinAddressSpace(unsigned AS) const;
@@ -2803,6 +2791,23 @@ public:
   bool addressSpaceMapManglingFor(LangAS AS) const {
     return AddrSpaceMapMangling || isTargetAddressSpace(AS);
   }
+
+  // Merges two exception specifications, such that the resulting
+  // exception spec is the union of both. For example, if either
+  // of them can throw something, the result can throw it as well.
+  FunctionProtoType::ExceptionSpecInfo
+  mergeExceptionSpecs(FunctionProtoType::ExceptionSpecInfo ESI1,
+                      FunctionProtoType::ExceptionSpecInfo ESI2,
+                      SmallVectorImpl<QualType> &ExceptionTypeStorage,
+                      bool AcceptDependent);
+
+  // For two "same" types, return a type which has
+  // the common sugar between them. If Unqualified is true,
+  // both types need only be the same unqualified type.
+  // The result will drop the qualifiers which do not occur
+  // in both types.
+  QualType getCommonSugaredType(QualType X, QualType Y,
+                                bool Unqualified = false);
 
 private:
   // Helper for integer ordering
@@ -2860,10 +2865,12 @@ public:
   bool canBindObjCObjectType(QualType To, QualType From);
 
   // Functions for calculating composite types
-  QualType mergeTypes(QualType, QualType, bool OfBlockPointer=false,
-                      bool Unqualified = false, bool BlockReturnType = false);
-  QualType mergeFunctionTypes(QualType, QualType, bool OfBlockPointer=false,
-                              bool Unqualified = false, bool AllowCXX = false);
+  QualType mergeTypes(QualType, QualType, bool OfBlockPointer = false,
+                      bool Unqualified = false, bool BlockReturnType = false,
+                      bool IsConditionalOperator = false);
+  QualType mergeFunctionTypes(QualType, QualType, bool OfBlockPointer = false,
+                              bool Unqualified = false, bool AllowCXX = false,
+                              bool IsConditionalOperator = false);
   QualType mergeFunctionParameterTypes(QualType, QualType,
                                        bool OfBlockPointer = false,
                                        bool Unqualified = false);
@@ -3110,6 +3117,9 @@ public:
   /// Parses the target attributes passed in, and returns only the ones that are
   /// valid feature names.
   ParsedTargetAttr filterFunctionTargetAttrs(const TargetAttr *TD) const;
+
+  std::vector<std::string>
+  filterFunctionTargetVersionAttrs(const TargetVersionAttr *TV) const;
 
   void getFunctionFeatureMap(llvm::StringMap<bool> &FeatureMap,
                              const FunctionDecl *) const;

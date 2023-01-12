@@ -70,6 +70,8 @@ namespace format {
   TYPE(FunctionLBrace)                                                         \
   TYPE(FunctionLikeOrFreestandingMacro)                                        \
   TYPE(FunctionTypeLParen)                                                     \
+  /* The colons as part of a C11 _Generic selection */                         \
+  TYPE(GenericSelectionColon)                                                  \
   /* The colon at the end of a goto label or a case label. Currently only used \
    * for Verilog. */                                                           \
   TYPE(GotoLabelColon)                                                         \
@@ -247,7 +249,8 @@ struct FormatToken {
         CanBreakBefore(false), ClosesTemplateDeclaration(false),
         StartsBinaryExpression(false), EndsBinaryExpression(false),
         PartOfMultiVariableDeclStmt(false), ContinuesLineCommentSection(false),
-        Finalized(false), ClosesRequiresClause(false), BlockKind(BK_Unknown),
+        Finalized(false), ClosesRequiresClause(false),
+        EndsCppAttributeGroup(false), BlockKind(BK_Unknown),
         Decision(FD_Unformatted), PackingKind(PPK_Inconclusive),
         TypeIsFinalized(false), Type(TT_Unknown) {}
 
@@ -317,6 +320,9 @@ struct FormatToken {
 
   /// \c true if this is the last token within requires clause.
   unsigned ClosesRequiresClause : 1;
+
+  /// \c true if this token ends a group of C++ attributes.
+  unsigned EndsCppAttributeGroup : 1;
 
 private:
   /// Contains the kind of block if this token is a brace.
@@ -681,7 +687,8 @@ public:
     case tok::kw_static_assert:
     case tok::kw__Atomic:
     case tok::kw___attribute:
-    case tok::kw___underlying_type:
+#define TRANSFORM_TYPE_TRAIT_DEF(_, Trait) case tok::kw___##Trait:
+#include "clang/Basic/TransformTypeTraits.def"
     case tok::kw_requires:
       return true;
     default:
@@ -1782,12 +1789,6 @@ struct AdditionalKeywords {
            (Tok.is(tok::kw_default) &&
             !(Next && Next->isOneOf(tok::colon, tok::semi, kw_clocking, kw_iff,
                                     kw_input, kw_output, kw_sequence)));
-  }
-
-  /// Whether the token begins a block.
-  bool isBlockBegin(const FormatToken &Tok, const FormatStyle &Style) const {
-    return Tok.is(TT_MacroBlockBegin) ||
-           (Style.isVerilog() ? isVerilogBegin(Tok) : Tok.is(tok::l_brace));
   }
 
 private:

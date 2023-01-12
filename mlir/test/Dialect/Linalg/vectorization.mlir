@@ -1,6 +1,4 @@
-// RUN: mlir-opt %s -test-linalg-transform-patterns=test-linalg-to-vector-patterns -split-input-file | FileCheck %s
-
-// -----
+// RUN: mlir-opt %s -test-transform-dialect-interpreter -split-input-file | FileCheck %s
 
 // CHECK-LABEL: contraction_dot
 func.func @contraction_dot(%A: memref<1584xf32>, %B: memref<1584xf32>, %C: memref<f32>) {
@@ -10,6 +8,13 @@ func.func @contraction_dot(%A: memref<1584xf32>, %B: memref<1584xf32>, %C: memre
   linalg.dot ins(%A, %B: memref<1584xf32>, memref<1584xf32>)
             outs(%C: memref<f32>)
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.dot"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns }
 }
 
 // -----
@@ -24,6 +29,13 @@ func.func @contraction_matvec(%A: memref<1584x1584xf32>, %B: memref<1584xf32>, %
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.matvec"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns }
+}
+
 // -----
 
 // CHECK-LABEL: contraction_matmul
@@ -33,6 +45,13 @@ func.func @contraction_matmul(%A: memref<1584x1584xf32>, %B: memref<1584x1584xf3
   linalg.matmul ins(%A, %B: memref<1584x1584xf32>, memref<1584x1584xf32>)
             outs(%C: memref<1584x1584xf32>)
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.matmul"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns }
 }
 
 // -----
@@ -45,6 +64,13 @@ func.func @contraction_batch_matmul(%A: memref<1584x1584x1584xf32>, %B: memref<1
     ins(%A, %B: memref<1584x1584x1584xf32>, memref<1584x1584x1584xf32>)
    outs(%C: memref<1584x1584x1584xf32>)
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.batch_matmul"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns }
 }
 
 // -----
@@ -80,6 +106,13 @@ func.func @vectorization_test(%A: memref<8x16xf32>, %B: memref<16x32xf32>,
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 #matmul_transpose_out_trait = {
@@ -95,7 +128,7 @@ func.func @vectorization_test(%A: memref<8x16xf32>, %B: memref<16x32xf32>,
 
 // CHECK-LABEL: func @generic_output_transpose
 func.func @generic_output_transpose(%A: memref<8x16xf32>, %B: memref<16x32xf32>,
-                         %C: memref<32x8xf32>) {
+                                    %C: memref<32x8xf32>) {
   //       CHECK: vector.transfer_read %{{.*}} : memref<8x16xf32>, vector<8x32x16xf32>
   //       CHECK: vector.transfer_read %{{.*}} : memref<16x32xf32>, vector<8x32x16xf32>
   //       CHECK: %[[ACC:.*]] = vector.transfer_read %{{.*}} : memref<32x8xf32>, vector<8x32xf32>
@@ -113,6 +146,13 @@ func.func @generic_output_transpose(%A: memref<8x16xf32>, %B: memref<16x32xf32>,
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 #map0 = affine_map<(d0, d1, d2) -> (d0, d1, d2)>
@@ -122,7 +162,7 @@ func.func @generic_output_transpose(%A: memref<8x16xf32>, %B: memref<16x32xf32>,
 func.func @generic_interchanged_transpose(%arg0: tensor<12x128x32xf32>) -> tensor<128x12x32xf32> {
   // CHECK: %[[IN:.+]] = vector.transfer_read
   // CHECK: vector.transfer_write %[[IN]], {{.+}} permutation_map = #[[MAP]]
-  %0 = linalg.init_tensor [128, 12, 32] : tensor<128x12x32xf32>
+  %0 = tensor.empty() : tensor<128x12x32xf32>
   %1 = linalg.generic {indexing_maps = [#map0, #map1],
                        iterator_types = ["parallel", "parallel", "parallel"]}
     ins(%arg0 : tensor<12x128x32xf32>)
@@ -131,6 +171,13 @@ func.func @generic_interchanged_transpose(%arg0: tensor<12x128x32xf32>) -> tenso
     linalg.yield %arg1 : f32
   } -> tensor<128x12x32xf32>
   return %1 : tensor<128x12x32xf32>
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
 }
 
 // -----
@@ -166,6 +213,13 @@ func.func @vectorization_test_integer(%A: memref<8x16xi32>, %B: memref<16x32xi32
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 // CHECK-LABEL: func @vectorization_test_2
@@ -177,6 +231,13 @@ func.func @vectorization_test_2(%A: memref<8x16xf32>, %B: memref<16x32xf32>,
     ins(%A, %B: memref<8x16xf32>, memref<16x32xf32>)
    outs(%C: memref<8x32xf32>)
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.matmul"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns }
 }
 
 // -----
@@ -196,6 +257,13 @@ func.func @test_vectorize_scalar_input(%A : memref<8x16xf32>, %arg0 : f32) {
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
 // -----
 
 // CHECK-LABEL: func @test_do_not_vectorize_unsupported_element_types
@@ -213,6 +281,13 @@ func.func @test_do_not_vectorize_unsupported_element_types(%A : memref<8x16xcomp
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
 // -----
 
 // CHECK-LABEL: func @test_vectorize_fill
@@ -221,6 +296,13 @@ func.func @test_vectorize_fill(%A : memref<8x16xf32>, %arg0 : f32) {
   //       CHECK: vector.transfer_write %[[V]], {{.*}} : vector<8x16xf32>, memref<8x16xf32>
   linalg.fill ins(%arg0 : f32) outs(%A : memref<8x16xf32>)
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.fill"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
 }
 
 // -----
@@ -234,6 +316,13 @@ func.func @test_vectorize_fill_scalar(%A : memref<f32>, %arg0 : f32) {
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.fill"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
 // -----
 
 // CHECK-LABEL: func @test_vectorize_copy
@@ -242,6 +331,13 @@ func.func @test_vectorize_copy(%A : memref<8x16xf32>, %B : memref<8x16xf32>) {
   //       CHECK: vector.transfer_write %[[V]], {{.*}} : vector<8x16xf32>, memref<8x16xf32>
   memref.copy %A, %B :  memref<8x16xf32> to memref<8x16xf32>
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["memref.copy"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
 }
 
 // -----
@@ -257,6 +353,12 @@ func.func @test_vectorize_copy_scalar(%A : memref<f32>, %B : memref<f32>) {
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["memref.copy"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
 // -----
 
 // CHECK-LABEL: func @test_vectorize_trailing_index
@@ -276,6 +378,13 @@ func.func @test_vectorize_trailing_index(%arg0: memref<1x2x4x8xindex>) {
     linalg.yield %0 : index
   }
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
 }
 
 // -----
@@ -298,6 +407,13 @@ func.func @test_vectorize_inner_index(%arg0: memref<1x2x4x8xindex>) {
     linalg.yield %0 : index
   }
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
 }
 
 // -----
@@ -376,6 +492,13 @@ func.func @generic_vectorize(%arg0: memref<4x256xf32>,
       f32, f32, f32, f32, f32, f32, f32, f32
   }
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_transfer_permutation_map_lowering_patterns }
 }
 
 // -----
@@ -462,6 +585,13 @@ func.func @generic_vectorize_tensor(%arg0: tensor<4x256xf32>,
     tensor<4x256xf32>, tensor<4x256xf32>, tensor<4x256xf32>
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1 { disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 // CHECK-DAG: #[[$MAP0:.*]] = affine_map<(d0, d1) -> (d0, 0, 0, d1)>
@@ -497,6 +627,13 @@ func.func @generic_vectorize_broadcast_transpose(
     linalg.yield %b : f32
   }
   return
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_transfer_permutation_map_lowering_patterns }
 }
 
 // -----
@@ -535,6 +672,13 @@ func.func @vectorization_transpose(%A: memref<14x7xf32>, %B: memref<16x14xf32>,
   return
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 // CHECK-LABEL: func @matmul_tensors
@@ -560,6 +704,13 @@ func.func @matmul_tensors(
   return %0 : tensor<8x12xf32>
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.matmul"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 // CHECK-LABEL: func @pad_static(
@@ -567,7 +718,7 @@ func.func @matmul_tensors(
 //   CHECK-NOT:   tensor.pad
 //   CHECK-DAG:   %[[C0:.*]] = arith.constant 0 : index
 //   CHECK-DAG:   %[[C2:.*]] = arith.constant 2 : index
-//   CHECK-DAG:   %[[INIT:.*]] = linalg.init_tensor [2, 3, 4] : tensor<2x3x4xf32>
+//   CHECK-DAG:   %[[INIT:.*]] = tensor.empty() : tensor<2x3x4xf32>
 //   CHECK-DAG:   %[[VEC:.*]] = vector.broadcast %[[PAD]] : f32 to vector<2x3x4xf32>
 //       CHECK:   %[[FILL:.*]] = vector.transfer_write %[[VEC]], %[[INIT]]{{.*}} : vector<2x3x4xf32>, tensor<2x3x4xf32>
 //       CHECK:   %[[READ:.*]] = vector.transfer_read %[[ARG0]][%[[C0]], %[[C0]], %[[C0]]], %[[PAD]] {in_bounds = [true, false, true]} : tensor<2x?x2xf32>, vector<2x3x2xf32>
@@ -581,6 +732,14 @@ func.func @pad_static(%arg0: tensor<2x?x2xf32>, %pad_value: f32) -> tensor<2x3x4
   return %0 : tensor<2x3x4xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1 { vectorize_padding }
+}
+
 // -----
 
 // CHECK-LABEL: func @pad_static_source(
@@ -588,7 +747,7 @@ func.func @pad_static(%arg0: tensor<2x?x2xf32>, %pad_value: f32) -> tensor<2x3x4
 //   CHECK-NOT:   tensor.pad
 //   CHECK-DAG:   %[[C0:.*]] = arith.constant 0 : index
 //   CHECK-DAG:   %[[C2:.*]] = arith.constant 2 : index
-//       CHECK:   %[[INIT:.*]] = linalg.init_tensor [2, 6, 4] : tensor<2x6x4xf32>
+//       CHECK:   %[[INIT:.*]] = tensor.empty() : tensor<2x6x4xf32>
 //       CHECK:   %[[VEC:.*]] =  vector.broadcast %[[PAD]] : f32 to vector<2x6x4xf32>
 //       CHECK:   %[[FILL:.*]] = vector.transfer_write %[[VEC]], %[[INIT]][%[[C0]], %[[C0]], %[[C0]]] {in_bounds = [true, true, true]} : vector<2x6x4xf32>, tensor<2x6x4xf32>
 //       CHECK:   %[[READ:.*]] = vector.transfer_read %[[ARG0]][%[[C0]], %[[C0]], %[[C0]]], %{{.*}} {in_bounds = [true, true, true]} : tensor<2x5x2xf32>, vector<2x5x2xf32>
@@ -601,6 +760,15 @@ func.func @pad_static_source(%arg0: tensor<2x5x2xf32>, %pad_value: f32) -> tenso
     } : tensor<2x5x2xf32> to tensor<2x6x4xf32>
   return %0 : tensor<2x6x4xf32>
 }
+
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { vectorize_padding }
+}
+
 
 // -----
 
@@ -616,7 +784,7 @@ func.func @pad_static_source(%arg0: tensor<2x5x2xf32>, %pad_value: f32) -> tenso
 //       CHECK:   %[[DIM3:.*]] = tensor.dim %[[SRC]], %[[C3]] : tensor<1x2x2x?xf32>
 //       CHECK:   %[[V4:.*]] = arith.addi %[[DIM3]], %[[C3]] : index
 //       CHECK:   %[[V5:.*]] = arith.addi %[[V4]], %[[C2]] : index
-//       CHECK:   %[[INIT:.*]] = linalg.init_tensor [6, %[[V1]], %[[V2]], %[[V5]]] : tensor<6x?x?x?xf32>
+//       CHECK:   %[[INIT:.*]] = tensor.empty(%[[V1]], %[[V2]], %[[V5]]) : tensor<6x?x?x?xf32>
 //       CHECK:   %[[FILL:.*]] = linalg.fill ins(%{{.*}} : f32) outs(%[[INIT]] : tensor<6x?x?x?xf32>) -> tensor<6x?x?x?xf32>
 //       CHECK:   %[[SRCDIM:.*]] = tensor.dim %[[SRC]], %[[C3]] : tensor<1x2x2x?xf32>
 //       CHECK:   %[[RESULT:.*]] = tensor.insert_slice %[[SRC]] into %[[FILL]][2, %[[LOW]], 3, 3] [1, 2, 2, %[[SRCDIM]]] [1, 1, 1, 1] : tensor<1x2x2x?xf32> into tensor<6x?x?x?xf32>
@@ -629,6 +797,15 @@ func.func @pad_static_dynamic(%arg0: tensor<1x2x2x?xf32>, %low: index, %high: in
     } : tensor<1x2x2x?xf32> to tensor<6x?x?x?xf32>
   return %0 : tensor<6x?x?x?xf32>
 }
+
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { vectorize_padding }
+}
+
 
 // -----
 
@@ -650,6 +827,14 @@ func.func @pad_and_transfer_read(%arg0: tensor<5x6xf32>) -> vector<7x9xf32> {
   %1 = vector.transfer_read %0[%c0, %c0], %c6
       : tensor<10x13xf32>, vector<7x9xf32>
   return %1 : vector<7x9xf32>
+}
+
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1 { vectorize_padding }
 }
 
 // -----
@@ -677,6 +862,14 @@ func.func @pad_and_transfer_write_static(
   %3 = tensor.extract_slice %2[0, 0] [5, 6] [1, 1] : tensor<10x13xf32> to tensor<5x6xf32>
   return %3 : tensor<5x6xf32>
 }
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4  { vectorize_padding }
+}
+
 
 // -----
 
@@ -707,6 +900,14 @@ func.func @pad_and_transfer_write_dynamic_static(
   return %3 : tensor<?x6xf32>
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4 { vectorize_padding }
+}
+
+
 // -----
 
 func.func private @make_vector() -> tensor<12x13xf32>
@@ -733,6 +934,14 @@ func.func @pad_and_insert_slice_source(
   return %r : tensor<12x13xf32>
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4  { vectorize_padding }
+}
+
+
 // -----
 
 func.func private @make_vector() -> tensor<12x13xf32>
@@ -751,6 +960,13 @@ func.func @pad_and_insert_slice_dest(
   %1 = call @make_vector() : () -> tensor<12x13xf32>
   %r = tensor.insert_slice %1 into %0[0, 0, 0][1, 12, 13][1, 1, 1] : tensor<12x13xf32> into tensor<1x12x13xf32>
   return %r : tensor<1x12x13xf32>
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
 }
 
 // -----
@@ -782,6 +998,14 @@ func.func @pad_tensor_non_const_pad_value(%arg0: tensor<5x6xf32>) -> tensor<12x1
   return %0 : tensor<12x13xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["tensor.pad"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4  { vectorize_padding }
+}
+
 // -----
 
 // CHECK-LABEL: func @sum_exp
@@ -807,6 +1031,14 @@ func.func @sum_exp(%input: tensor<4x16x8xf32>, %output: tensor<4x16xf32>)
       linalg.yield %2 : f32
     } -> tensor<4x16xf32>
   return %0 : tensor<4x16xf32>
+}
+
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
 }
 
 // -----
@@ -846,17 +1078,24 @@ func.func @sum_exp_2(%input: tensor<3x2xf32>, %input_2: tensor<5x4xf32>, %output
   return %0 : tensor<5x2xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
+}
+
 // -----
 
 // CHECK-LABEL:   func @red_max_2d(
 func.func @red_max_2d(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
   // CHECK: %[[CMINF:.+]] = arith.constant dense<-3.402820e+38> : vector<4xf32>
-  // CHECK: linalg.init_tensor [4] : tensor<4xf32>
-  // CHECK: vector.transfer_write {{.*}} : vector<4xf32>, tensor<4xf32>
+  // CHECK: tensor.empty() : tensor<4xf32>
   // CHECK: vector.multi_reduction <maxf>, {{.*}}, %[[CMINF]] [1] : vector<4x4xf32> to vector<4xf32>
   // CHECK: vector.transfer_write {{.*}} : vector<4xf32>, tensor<4xf32>
   %ident = arith.constant -3.40282e+38 : f32
-  %init = linalg.init_tensor [4] : tensor<4xf32>
+  %init = tensor.empty() : tensor<4xf32>
   %fill = linalg.fill ins(%ident : f32) outs(%init : tensor<4xf32>) -> tensor<4xf32>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0)>],
@@ -869,18 +1108,25 @@ func.func @red_max_2d(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
   return %red : tensor<4xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4 { vectorize_padding }
+}
+
 // -----
 
 // CHECK-LABEL:   func @red_min_2d(
 func.func @red_min_2d(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
   // CHECK: %[[CMAXF:.+]] = arith.constant dense<3.402820e+38> : vector<4xf32>
-  // CHECK: linalg.init_tensor [4] : tensor<4xf32>
-  // CHECK: vector.transfer_write {{.*}} : vector<4xf32>, tensor<4xf32>
+  // CHECK: tensor.empty() : tensor<4xf32>
   // CHECK: vector.transfer_read {{.*}} : tensor<4x4xf32>, vector<4x4xf32>
   // CHECK: vector.multi_reduction <minf>, {{.*}}, %[[CMAXF]] [1] : vector<4x4xf32> to vector<4xf32>
   // CHECK: vector.transfer_write {{.*}} : vector<4xf32>, tensor<4xf32>
   %maxf32 = arith.constant 3.40282e+38 : f32
-  %init = linalg.init_tensor [4] : tensor<4xf32>
+  %init = tensor.empty() : tensor<4xf32>
   %fill = linalg.fill ins(%maxf32 : f32) outs(%init : tensor<4xf32>) -> tensor<4xf32>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0)>],
@@ -893,17 +1139,24 @@ func.func @red_min_2d(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
   return %red : tensor<4xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
+}
+
 // -----
 
 // CHECK-LABEL:   func @red_mul_2d(
 func.func @red_mul_2d(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
-  // CHECK: linalg.init_tensor [4] : tensor<4xf32>
-  // CHECK: vector.transfer_write {{.*}} : vector<4xf32>, tensor<4xf32>
+  // CHECK: tensor.empty() : tensor<4xf32>
   // CHECK: vector.transfer_read {{.*}} : tensor<4x4xf32>, vector<4x4xf32>
   // CHECK: vector.multi_reduction <mul>, {{.*}}, {{.*}} [1] : vector<4x4xf32> to vector<4xf32>
   // CHECK: vector.transfer_write {{.*}} : vector<4xf32>, tensor<4xf32>
   %ident = arith.constant 1.0 : f32
-  %init = linalg.init_tensor [4] : tensor<4xf32>
+  %init = tensor.empty() : tensor<4xf32>
   %fill = linalg.fill ins(%ident : f32) outs(%init : tensor<4xf32>) -> tensor<4xf32>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0)>],
@@ -916,17 +1169,24 @@ func.func @red_mul_2d(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
   return %red : tensor<4xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
+}
+
 // -----
 
 // CHECK-LABEL:   func @red_or_2d(
 func.func @red_or_2d(%arg0: tensor<4x4xi1>) -> tensor<4xi1> {
-  // CHECK: linalg.init_tensor [4] : tensor<4xi1>
-  // CHECK: vector.transfer_write {{.*}} : vector<4xi1>, tensor<4xi1>
+  // CHECK: tensor.empty() : tensor<4xi1>
   // CHECK: vector.transfer_read {{.*}} : tensor<4x4xi1>, vector<4x4xi1>
   // CHECK: vector.multi_reduction <or>, {{.*}}, {{.*}} [1] : vector<4x4xi1> to vector<4xi1>
   // CHECK: vector.transfer_write {{.*}} : vector<4xi1>, tensor<4xi1>
   %ident = arith.constant false
-  %init = linalg.init_tensor [4] : tensor<4xi1>
+  %init = tensor.empty() : tensor<4xi1>
   %fill = linalg.fill ins(%ident : i1) outs(%init : tensor<4xi1>) -> tensor<4xi1>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0)>],
@@ -939,17 +1199,24 @@ func.func @red_or_2d(%arg0: tensor<4x4xi1>) -> tensor<4xi1> {
   return %red : tensor<4xi1>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
+}
+
 // -----
 
 // CHECK-LABEL:   func @red_and_2d(
 func.func @red_and_2d(%arg0: tensor<4x4xi1>) -> tensor<4xi1> {
-  // CHECK: linalg.init_tensor [4] : tensor<4xi1>
-  // CHECK: vector.transfer_write {{.*}} : vector<4xi1>, tensor<4xi1>
+  // CHECK: tensor.empty() : tensor<4xi1>
   // CHECK: vector.transfer_read {{.*}} : tensor<4x4xi1>, vector<4x4xi1>
   // CHECK: vector.multi_reduction <and>, {{.*}}, {{.*}} [1] : vector<4x4xi1> to vector<4xi1>
   // CHECK: vector.transfer_write {{.*}} : vector<4xi1>, tensor<4xi1>
   %ident = arith.constant true
-  %init = linalg.init_tensor [4] : tensor<4xi1>
+  %init = tensor.empty() : tensor<4xi1>
   %fill = linalg.fill ins(%ident : i1) outs(%init : tensor<4xi1>) -> tensor<4xi1>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0)>],
@@ -962,17 +1229,24 @@ func.func @red_and_2d(%arg0: tensor<4x4xi1>) -> tensor<4xi1> {
   return %red : tensor<4xi1>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
+}
+
 // -----
 
 // CHECK-LABEL:   func @red_xor_2d(
 func.func @red_xor_2d(%arg0: tensor<4x4xi1>) -> tensor<4xi1> {
-  // CHECK: linalg.init_tensor [4] : tensor<4xi1>
-  // CHECK: vector.transfer_write {{.*}} : vector<4xi1>, tensor<4xi1>
+  // CHECK: tensor.empty() : tensor<4xi1>
   // CHECK: vector.transfer_read {{.*}} : tensor<4x4xi1>, vector<4x4xi1>
   // CHECK: vector.multi_reduction <xor>, {{.*}}, {{.*}} [1] : vector<4x4xi1> to vector<4xi1>
   // CHECK: vector.transfer_write {{.*}} : vector<4xi1>, tensor<4xi1>
   %ident = arith.constant false
-  %init = linalg.init_tensor [4] : tensor<4xi1>
+  %init = tensor.empty() : tensor<4xi1>
   %fill = linalg.fill ins(%ident : i1) outs(%init : tensor<4xi1>) -> tensor<4xi1>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0)>],
@@ -983,6 +1257,14 @@ func.func @red_xor_2d(%arg0: tensor<4x4xi1>) -> tensor<4xi1> {
     linalg.yield %xor : i1
   } -> tensor<4xi1>
   return %red : tensor<4xi1>
+}
+
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
 }
 
 // -----
@@ -996,7 +1278,7 @@ func.func @explicit_broadcast(%arg0: tensor<4x4xf32>, %arg1: tensor<4x1xf32>) ->
   // CHECK: subf {{.*}} : vector<4x4xf32>
   // CHECK: vector.transfer_write {{.*}} {in_bounds = [true, true]} : vector<4x4xf32>, tensor<4x4xf32>
   %c0 = arith.constant 0.0 : f32
-  %init = linalg.init_tensor [4, 4] : tensor<4x4xf32>
+  %init = tensor.empty() : tensor<4x4xf32>
   %fill = linalg.fill ins(%c0 : f32) outs(%init : tensor<4x4xf32>) -> tensor<4x4xf32>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0, 0)>,
@@ -1009,6 +1291,14 @@ func.func @explicit_broadcast(%arg0: tensor<4x4xf32>, %arg1: tensor<4x1xf32>) ->
       linalg.yield %40 : f32
     } -> tensor<4x4xf32>
   return %red : tensor<4x4xf32>
+}
+
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
 }
 
 // -----
@@ -1024,7 +1314,7 @@ func.func @fused_broadcast_red_2d(%arg0: tensor<4x4xf32>, %arg1: tensor<4x1xf32>
   // CHECK: vector.multi_reduction <add>, {{.*}}, {{.*}} : vector<4x4xf32> to vector<4xf32>
   // CHECK: vector.transfer_write {{.*}} {in_bounds = [true]} : vector<4xf32>, tensor<4xf32>
   %c0 = arith.constant 0.0 : f32
-  %init = linalg.init_tensor [4] : tensor<4xf32>
+  %init = tensor.empty() : tensor<4xf32>
   %fill = linalg.fill ins(%c0 : f32) outs(%init : tensor<4xf32>) -> tensor<4xf32>
   %red = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
                                           affine_map<(d0, d1) -> (d0, 0)>,
@@ -1041,6 +1331,18 @@ func.func @fused_broadcast_red_2d(%arg0: tensor<4x4xf32>, %arg1: tensor<4x1xf32>
   return %red : tensor<4xf32>
 }
 
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.fill"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+
+  %3 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %4 = get_closest_isolated_parent %3 : (!pdl.operation) -> !pdl.operation
+  %5 = transform.structured.vectorize %4
+}
+
 // -----
 
 //  CHECK-LABEL: func @reduce_1d(
@@ -1051,11 +1353,9 @@ func.func @reduce_1d(%arg0: tensor<32xf32>) -> tensor<f32> {
   //  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
   %f0 = arith.constant 0.000000e+00 : f32
 
-  //      CHECK: %[[init:.*]] = linalg.init_tensor [] : tensor<f32>
-  %0 = linalg.init_tensor [] : tensor<f32>
+  //      CHECK: %[[init:.*]] = tensor.empty() : tensor<f32>
+  %0 = tensor.empty() : tensor<f32>
 
-  //      CHECK: %[[f:.*]] = vector.transfer_write %[[vF0]], %[[init]][]
-  // CHECK-SAME:   : vector<f32>, tensor<f32>
   %1 = linalg.fill ins(%f0 : f32) outs(%0 : tensor<f32>) -> tensor<f32>
   //      CHECK: %[[r:.*]] = vector.transfer_read %[[A]][%[[C0]]]
   // CHECK-SAME:   : tensor<32xf32>, vector<32xf32>
@@ -1063,7 +1363,7 @@ func.func @reduce_1d(%arg0: tensor<32xf32>) -> tensor<f32> {
   //      CHECK: %[[red:.*]] = vector.multi_reduction <add>, %[[r]], %[[f0]] [0]
   // CHECK-SAME:   : vector<32xf32> to f32
   //      CHECK: %[[red_v1:.*]] = vector.broadcast %[[red]] : f32 to vector<f32>
-  //      CHECK: %[[res:.*]] = vector.transfer_write %[[red_v1]], %[[f]][]
+  //      CHECK: %[[res:.*]] = vector.transfer_write %[[red_v1]], %[[init]][]
   // CHECK-SAME:   : vector<f32>, tensor<f32>
   %2 = linalg.generic {
          indexing_maps = [affine_map<(d0) -> (d0)>,
@@ -1079,17 +1379,24 @@ func.func @reduce_1d(%arg0: tensor<32xf32>) -> tensor<f32> {
   return %2 : tensor<f32>
 }
 
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
 
 // -----
 
 // This test checks that vectorization does not occur when an input indexing map
-// is not a projected permutation. In the future, this can be converted to a 
+// is not a projected permutation. In the future, this can be converted to a
 // positive test when support is added.
 
 // CHECK-LABEL:   func @not_projected_permutation
 func.func @not_projected_permutation(%arg0: tensor<8x8xf32>) -> tensor<6x6x3x3xf32> {
   %c0 = arith.constant 0.0 : f32
-  %init = linalg.init_tensor [6, 6, 3, 3] : tensor<6x6x3x3xf32>
+  %init = tensor.empty() : tensor<6x6x3x3xf32>
   %fill = linalg.fill ins(%c0 : f32) outs(%init : tensor<6x6x3x3xf32>) -> tensor<6x6x3x3xf32>
   // CHECK: linalg.generic
   %result = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3) -> (d0 + d2, d1 + d3)>,
@@ -1101,4 +1408,375 @@ func.func @not_projected_permutation(%arg0: tensor<8x8xf32>) -> tensor<6x6x3x3xf
       linalg.yield %arg7 : f32
     } -> tensor<6x6x3x3xf32>
   return %result : tensor<6x6x3x3xf32>
+}
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
+// -----
+
+// Check vectorization can handle cases where outputs are a mix of reduced and non-reduced values.
+func.func @mixed_parallel_reduced_results(%arg0 : tensor<2x4x8xf32>,
+    %arg1 : tensor<2x4xf32>, %arg2 : tensor<2x4x8xf32>, %arg3 : tensor<2x4xf32>) ->
+    (tensor<2x4x8xf32>, tensor<2x4xf32>) {
+  %0:2 = linalg.generic {
+      indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d1, d2)>, affine_map<(d0, d1, d2) -> (d0, d1)>,
+                       affine_map<(d0, d1, d2) -> (d0, d1, d2)>, affine_map<(d0, d1, d2) -> (d0, d1)>],
+      iterator_types = ["parallel", "parallel", "reduction"]}
+      ins(%arg0, %arg1 : tensor<2x4x8xf32>, tensor<2x4xf32>)
+      outs(%arg2, %arg3 : tensor<2x4x8xf32>, tensor<2x4xf32>) {
+    ^bb0(%b0 : f32, %b1 : f32, %b2 : f32, %b3 : f32):
+      %1 = arith.mulf %b0, %b1 : f32
+      %2 = arith.addf %1, %b3 : f32
+      linalg.yield %1, %2 : f32, f32
+  } -> (tensor<2x4x8xf32>, tensor<2x4xf32>)
+  return %0#0, %0#1 : tensor<2x4x8xf32>, tensor<2x4xf32>
+}
+// CHECK-LABEL: func @mixed_parallel_reduced_results(
+//  CHECK-SAME:     %[[ARG0:[a-zA-Z0-9]+]]: tensor<2x4x8xf32>
+//  CHECK-SAME:     %[[ARG1:[a-zA-Z0-9]+]]: tensor<2x4xf32>
+//  CHECK-SAME:     %[[ARG2:[a-zA-Z0-9]+]]: tensor<2x4x8xf32>
+//  CHECK-SAME:     %[[ARG3:[a-zA-Z0-9]+]]: tensor<2x4xf32>
+//   CHECK-DAG:   %[[V0:.+]] = vector.transfer_read %[[ARG0]]
+//   CHECK-DAG:   %[[V1:.+]] = vector.transfer_read %[[ARG1]]
+//   CHECK-DAG:   %[[V2:.+]] = vector.transfer_read %[[ARG3]]
+//   CHECK-DAG:   %[[MUL:.+]] = arith.mulf %[[V0]], %[[V1]]
+//   CHECK-DAG:   %[[ADD:.+]] = vector.multi_reduction <add>, %[[MUL]], %[[V2]]
+//   CHECK-DAG:   vector.transfer_write %[[MUL]], %[[ARG2]]
+//   CHECK-DAG:   vector.transfer_write %[[ADD]], %[[ARG3]]
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1  { disable_multi_reduction_to_contract_patterns, disable_transfer_permutation_map_lowering_patterns }
+}
+
+// -----
+
+#map0 = affine_map<(d0, d1, d2, d3) -> (d0, d2)>
+#map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
+func.func @vectorize_1d_tensor_extract(%arg0: tensor<3xf32>, %arg1: tensor<4x3xi32>, %arg2: tensor<4x7x3x2xf32>) -> tensor<4x7x3x2xf32> {
+  %1 = linalg.generic {
+    indexing_maps = [#map0, #map1],
+    iterator_types = ["parallel", "parallel", "parallel", "parallel"]
+  } ins(%arg1 : tensor<4x3xi32>) outs(%arg2 : tensor<4x7x3x2xf32>) {
+  ^bb0(%arg3: i32, %arg4: f32):
+    %2 = arith.index_cast %arg3 : i32 to index
+    %3 = tensor.extract %arg0[%2] : tensor<3xf32>
+    linalg.yield %3 : f32
+  } -> tensor<4x7x3x2xf32>
+  return %1 : tensor<4x7x3x2xf32>
+}
+// CHECK-LABEL: func.func @vectorize_1d_tensor_extract
+// CHECK-SAME:    %[[ARG0:.*]]: tensor<3xf32>
+// CHECK-SAME:    %[[ARG1:.*]]: tensor<4x3xi32>
+// CHECK: %[[C0:.*]] = arith.constant 0 : index
+// CHECK: %[[MASK:.*]] = arith.constant dense<true> : vector<4x7x3x2xi1>
+// CHECK: %[[PASSTHRU:.*]] = arith.constant dense<0.000000e+00> : vector<4x7x3x2xf32>
+// CHECK: %[[V0:.*]] = vector.transfer_read %[[ARG1]]
+// CHECK: %[[CAST:.*]] = arith.index_cast %[[V0]]
+// CHECK: %[[BROADCAST:.*]] = vector.broadcast %[[CAST]]
+// CHECK: %[[INDICES:.*]] = vector.transpose %[[BROADCAST]]
+// CHECK: %[[GATHER:.*]] = vector.gather %[[ARG0]][%[[C0]]] [%[[INDICES]]], %[[MASK]], %[[PASSTHRU]]
+// CHECK: vector.transfer_write %[[GATHER]]
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
+// -----
+
+#map0 = affine_map<(d0, d1, d2, d3) -> (d0, d2)>
+#map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d3)>
+#map2 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
+func.func @vectorize_nd_tensor_extract(%arg0: tensor<3x3xf32>, %arg1: tensor<4x3xi32>, %arg2: tensor<4x3xi32>, %arg3: tensor<4x7x2xf32>, %arg4: tensor<4x7x3x2xf32>) -> tensor<4x7x3x2xf32> {
+  %2 = linalg.generic {
+    indexing_maps = [#map0, #map0, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "parallel", "parallel"]
+  } ins(%arg1, %arg2, %arg3 : tensor<4x3xi32>, tensor<4x3xi32>, tensor<4x7x2xf32>) outs(%arg4 : tensor<4x7x3x2xf32>) {
+  ^bb0(%arg5: i32, %arg6: i32, %arg7: f32, %arg8: f32):
+    %3 = arith.index_cast %arg5 : i32 to index
+    %4 = arith.index_cast %arg6 : i32 to index
+    %7 = tensor.extract %arg0[%3, %4] : tensor<3x3xf32>
+    linalg.yield %7 : f32
+  } -> tensor<4x7x3x2xf32>
+  return %2 : tensor<4x7x3x2xf32>
+}
+// CHECK-LABEL: func.func @vectorize_nd_tensor_extract
+// CHECK-SAME: %[[ARG0:.*]]: tensor<3x3xf32>
+// CHECK-SAME: %[[ARG1:arg1]]: tensor<4x3xi32>
+// CHECK-SAME: %[[ARG2:arg2]]: tensor<4x3xi32>
+// CHECK-SAME: %[[ARG3:.*]]: tensor<4x7x2xf32>
+// CHECK-SAME: %[[ARG4:.*]]: tensor<4x7x3x2xf32>
+// CHECK:    %[[C0:.*]] = arith.constant 0 : index
+// CHECK:    %[[C0_i32:.*]] = arith.constant 0 : i32
+// CHECK:    %[[CST:.*]] = arith.constant dense<3> : vector<7x2x4x3xindex>
+// CHECK:    %[[CST_1:.*]] = arith.constant dense<true> : vector<4x7x3x2xi1>
+// CHECK:    %[[PASSTHRU:.*]] = arith.constant dense<0.000000e+00> : vector<4x7x3x2xf32>
+// CHECK:    %[[V0:.*]] = vector.transfer_read %[[ARG1]][%[[C0]], %[[C0]]], %[[C0_i32]] {in_bounds = [true, true]} : tensor<4x3xi32>, vector<4x3xi32>
+// CHECK:    %[[V1:.*]] = vector.transfer_read %[[ARG2]][%[[C0]], %[[C0]]], %[[C0_i32]] {in_bounds = [true, true]} : tensor<4x3xi32>, vector<4x3xi32>
+// CHECK:    %[[CAST:.*]] = arith.index_cast %[[V0]] : vector<4x3xi32> to vector<4x3xindex>
+// CHECK:    %[[B1:.*]] = vector.broadcast %[[CAST]] : vector<4x3xindex> to vector<7x2x4x3xindex>
+// CHECK:    %[[CAST_1:.*]] = arith.index_cast %[[V1]] : vector<4x3xi32> to vector<4x3xindex>
+// CHECK:    %[[B2:.*]] = vector.broadcast %[[CAST_1]] : vector<4x3xindex> to vector<7x2x4x3xindex>
+// CHECK:    %[[MULI:.*]] = arith.muli %[[B1]], %[[CST]] : vector<7x2x4x3xindex>
+// CHECK:    %[[ADDI:.*]] = arith.addi %[[B2]], %[[MULI]] : vector<7x2x4x3xindex>
+// CHECK:    %[[T:.*]] = vector.transpose %[[ADDI]], [2, 0, 3, 1] : vector<7x2x4x3xindex> to vector<4x7x3x2xindex>
+// CHECK:    %[[GATHER:.*]] = vector.gather %[[ARG0]][%[[C0]], %[[C0]]] [%[[T]]], %[[CST_1]], %[[PASSTHRU]] : tensor<3x3xf32>, vector<4x7x3x2xindex>, vector<4x7x3x2xi1>, vector<4x7x3x2xf32> into vector<4x7x3x2xf32>
+// CHECK:    vector.transfer_write %[[GATHER]], %[[ARG4]][%[[C0]], %[[C0]], %[[C0]], %[[C0]]] {in_bounds = [true, true, true, true]} : vector<4x7x3x2xf32>, tensor<4x7x3x2xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1 { vectorize_nd_extract }
+}
+
+// -----
+
+func.func @vectorize_map(%arg0: memref<64xf32>,
+    %arg1: memref<64xf32>, %arg2: memref<64xf32>) {
+  linalg.map ins(%arg0, %arg1 : memref<64xf32>, memref<64xf32>)
+             outs(%arg2 : memref<64xf32>)
+    (%in: f32, %in_0: f32) {
+      %0 = arith.addf %in, %in_0 : f32
+      linalg.yield %0 : f32
+    }
+  return
+}
+// CHECK-LABEL: func @vectorize_map
+// CHECK:         %[[LHS:.*]] = vector.transfer_read
+// CHECK-NEXT:    %[[RHS:.*]] = vector.transfer_read
+// CHECK-NEXT:    arith.addf %[[LHS]], %[[RHS]] : vector<64xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.map"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
+// -----
+
+func.func @vectorize_transpose(%arg0: memref<16x32x64xf32>,
+                               %arg1: memref<32x64x16xf32>) {
+  linalg.transpose ins(%arg0 : memref<16x32x64xf32>)
+                   outs(%arg1 : memref<32x64x16xf32>) permutation = [1, 2, 0]
+  return
+}
+// CHECK-LABEL: func @vectorize_transpose
+// CHECK:         vector.transpose
+// CHECK-SAME:      [1, 2, 0] : vector<16x32x64xf32> to vector<32x64x16xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.transpose"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
+// -----
+
+func.func @vectorize_reduce(%arg0: memref<16x32x64xf32>,
+                  %arg1: memref<16x64xf32>) {
+  linalg.reduce ins(%arg0 : memref<16x32x64xf32>)
+                outs(%arg1 : memref<16x64xf32>) dimensions = [1]
+    (%in: f32, %init: f32) {
+      %0 = arith.addf %in, %init : f32
+      linalg.yield %0 : f32
+    }
+  return
+}
+// CHECK-LABEL: func @vectorize_reduce
+// CHECK:         vector.multi_reduction <add>
+// CHECK-SAME:    : vector<16x32x64xf32> to vector<16x64xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.reduce"]} in %arg1
+  %1 = get_closest_isolated_parent %0 : (!pdl.operation) -> !pdl.operation
+  %2 = transform.structured.vectorize %1
+}
+
+// -----
+
+func.func @vectorize_dynamic_identity(%arg0: tensor<?xf32>,
+                                      %arg1: tensor<?xf32>,
+                                      %arg2: tensor<?xf32>) -> tensor<?xf32> {
+  %0 = linalg.generic { indexing_maps = [affine_map<(d0) -> (d0)>,
+                                         affine_map<(d0) -> (d0)>,
+                                         affine_map<(d0) -> (d0)>],
+                   iterator_types = ["parallel"] }
+    ins(%arg0, %arg1 : tensor<?xf32>, tensor<?xf32>)
+    outs(%arg2 : tensor<?xf32>) {
+    ^bb(%in0: f32, %in1: f32, %out: f32) :
+      %0 = arith.addf %in0, %in1 : f32
+      linalg.yield %0 : f32
+    } -> tensor<?xf32>
+  return %0 : tensor<?xf32>
+}
+
+// CHECK-LABEL:   @vectorize_dynamic_identity
+// CHECK:           %[[VAL_3:.*]] = arith.constant 0 : index
+// CHECK:           %[[VAL_4:.*]] = tensor.dim %{{.*}}, %[[VAL_3]] : tensor<?xf32>
+// CHECK:           %[[VAL_7:.*]] = vector.create_mask %[[VAL_4]] : vector<4xi1>
+// CHECK:           %[[VAL_8:.*]] = vector.mask %[[VAL_7]] { vector.transfer_read %{{.*}} {in_bounds = [true]} : tensor<?xf32>, vector<4xf32> } : vector<4xi1> -> vector<4xf32>
+// CHECK:           %[[VAL_10:.*]] = vector.mask %[[VAL_7]] { vector.transfer_read %{{.*}} {in_bounds = [true]} : tensor<?xf32>, vector<4xf32> } : vector<4xi1> -> vector<4xf32>
+// CHECK:           %[[VAL_12:.*]] = vector.mask %[[VAL_7]] { vector.transfer_read %{{.*}} {in_bounds = [true]} : tensor<?xf32>, vector<4xf32> } : vector<4xi1> -> vector<4xf32>
+// CHECK:           %[[VAL_13:.*]] = arith.addf %[[VAL_8]], %[[VAL_10]] : vector<4xf32>
+// CHECK:           %[[VAL_14:.*]] = vector.mask %[[VAL_7]] { vector.transfer_write %{{.*}} {in_bounds = [true]} : vector<4xf32>, tensor<?xf32> } : vector<4xi1> -> tensor<?xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  transform.structured.masked_vectorize %0 vector_sizes [4]
+}
+
+// -----
+
+func.func @vectorize_dynamic_1d_broadcast(%arg0: tensor<?xf32>,
+                                          %arg1: tensor<?xf32>,
+                                          %arg2: tensor<?xf32>) -> tensor<?xf32> {
+  %0 = linalg.generic { indexing_maps = [affine_map<(d0) -> (0)>,
+                                         affine_map<(d0) -> (d0)>,
+                                         affine_map<(d0) -> (d0)>],
+                        iterator_types = ["parallel"] }
+    ins(%arg0, %arg1 : tensor<?xf32>, tensor<?xf32>)
+    outs(%arg2 : tensor<?xf32>) {
+    ^bb(%in0: f32, %in1: f32, %out: f32) :
+      %0 = arith.addf %in0, %in1 : f32
+      linalg.yield %0 : f32
+    } -> tensor<?xf32>
+  return %0 : tensor<?xf32>
+}
+
+// CHECK-LABEL:   @vectorize_dynamic_1d_broadcast
+// CHECK:           %[[VAL_3:.*]] = arith.constant 0 : index
+// CHECK:           %[[VAL_4:.*]] = tensor.dim %{{.*}}, %[[VAL_3]] : tensor<?xf32>
+// CHECK:           %[[VAL_7:.*]] = vector.transfer_read %{{.*}} {permutation_map = #{{.*}}} : tensor<?xf32>, vector<4xf32>
+// CHECK:           %[[VAL_9:.*]] = vector.create_mask %[[VAL_4]] : vector<4xi1>
+// CHECK:           %[[VAL_10:.*]] = vector.mask %[[VAL_9]] { vector.transfer_read %{{.*}} {in_bounds = [true]} : tensor<?xf32>, vector<4xf32> } : vector<4xi1> -> vector<4xf32>
+// CHECK:           %[[VAL_12:.*]] = vector.mask %[[VAL_9]] { vector.transfer_read %{{.*}} {in_bounds = [true]} : tensor<?xf32>, vector<4xf32> } : vector<4xi1> -> vector<4xf32>
+// CHECK:           %[[VAL_13:.*]] = arith.addf %[[VAL_7]], %[[VAL_10]] : vector<4xf32>
+// CHECK:           %[[VAL_14:.*]] = vector.mask %{{.*}} { vector.transfer_write %[[VAL_13]], {{.*}} {in_bounds = [true]} : vector<4xf32>, tensor<?xf32> } : vector<4xi1> -> tensor<?xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  transform.structured.masked_vectorize %0 vector_sizes [4]
+}
+
+// -----
+
+func.func @vectorize_dynamic_2d_transpose(%arg0: tensor<?x?xf32>,
+                                          %arg1: tensor<?x?xf32>,
+                                          %arg2: tensor<?x?xf32>) -> tensor<?x?xf32> {
+  %0 = linalg.generic { indexing_maps = [affine_map<(d0, d1) -> (d1, d0)>,
+                                         affine_map<(d0, d1) -> (d0, d1)>,
+                                         affine_map<(d0, d1) -> (d0, d1)>],
+                        iterator_types = ["parallel", "parallel"] }
+    ins(%arg0, %arg1 : tensor<?x?xf32>, tensor<?x?xf32>)
+    outs(%arg2 : tensor<?x?xf32>) {
+    ^bb(%in0: f32, %in1: f32, %out: f32) :
+      %0 = arith.addf %in0, %in1 : f32
+      linalg.yield %0 : f32
+    } -> tensor<?x?xf32>
+    return %0 : tensor<?x?xf32>
+}
+
+// CHECK-LABEL:   @vectorize_dynamic_2d_transpose
+// CHECK:           %[[VAL_3:.*]] = arith.constant 1 : index
+// CHECK:           %[[VAL_4:.*]] = tensor.dim %{{.*}}, %[[VAL_3]] : tensor<?x?xf32>
+// CHECK:           %[[VAL_5:.*]] = arith.constant 0 : index
+// CHECK:           %[[VAL_6:.*]] = tensor.dim %{{.*}}, %[[VAL_5]] : tensor<?x?xf32>
+// CHECK:           %[[VAL_9:.*]] = vector.create_mask %[[VAL_6]], %[[VAL_4]] : vector<8x4xi1>
+// CHECK:           %[[VAL_10:.*]] = vector.mask %[[VAL_9]] { vector.transfer_read %{{.*}} {in_bounds = [true, true], permutation_map = #{{.*}}} : tensor<?x?xf32>, vector<4x8xf32> } : vector<8x4xi1> -> vector<4x8xf32>
+// CHECK:           %[[VAL_12:.*]] = vector.create_mask %[[VAL_4]], %[[VAL_6]] : vector<4x8xi1>
+// CHECK:           %[[VAL_13:.*]] = vector.mask %[[VAL_12]] { vector.transfer_read %{{.*}} {in_bounds = [true, true]} : tensor<?x?xf32>, vector<4x8xf32> } : vector<4x8xi1> -> vector<4x8xf32>
+// CHECK:           %[[VAL_14:.*]] = arith.constant 0.000000e+00 : f32
+// CHECK:           %[[VAL_15:.*]] = vector.mask %[[VAL_12]] { vector.transfer_read %{{.*}} {in_bounds = [true, true]} : tensor<?x?xf32>, vector<4x8xf32> } : vector<4x8xi1> -> vector<4x8xf32>
+// CHECK:           %[[VAL_16:.*]] = arith.addf %[[VAL_10]], %[[VAL_13]] : vector<4x8xf32>
+// CHECK:           %[[VAL_17:.*]] = vector.mask %[[VAL_12]] { vector.transfer_write %[[VAL_16]], %{{.*}} {in_bounds = [true, true]} : vector<4x8xf32>, tensor<?x?xf32> } : vector<4x8xi1> -> tensor<?x?xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  transform.structured.masked_vectorize %0 vector_sizes [4, 8]
+}
+
+// -----
+
+func.func @vectorize_dynamic_generic_2d_broadcast(%arg0: tensor<?x?xf32>,
+                                                  %arg1: tensor<?x?xf32>,
+                                                  %arg2: tensor<?x?xf32>) -> tensor<?x?xf32> {
+  %0 = linalg.generic { indexing_maps = [affine_map<(d0, d1) -> (0, d1)>,
+                                         affine_map<(d0, d1) -> (d0, d1)>,
+                                         affine_map<(d0, d1) -> (d0, d1)>],
+                        iterator_types = ["parallel", "parallel"] }
+    ins(%arg0, %arg1 : tensor<?x?xf32>, tensor<?x?xf32>)
+    outs(%arg2 : tensor<?x?xf32>) {
+    ^bb(%in0: f32, %in1: f32, %out: f32) :
+      %0 = arith.addf %in0, %in1 : f32
+      linalg.yield %0 : f32
+    } -> tensor<?x?xf32>
+  return %0 : tensor<?x?xf32>
+}
+
+// CHECK-LABEL:   @vectorize_dynamic_generic_2d_broadcast
+// CHECK:           %[[VAL_3:.*]] = arith.constant 0 : index
+// CHECK:           %[[VAL_4:.*]] = tensor.dim %{{.*}}, %[[VAL_3]] : tensor<?x?xf32>
+// CHECK:           %[[VAL_5:.*]] = arith.constant 1 : index
+// CHECK:           %[[VAL_6:.*]] = tensor.dim %{{.*}}, %[[VAL_5]] : tensor<?x?xf32>
+// CHECK:           %[[VAL_9:.*]] = vector.create_mask %[[VAL_6]] : vector<8xi1>
+// CHECK:           %[[VAL_10:.*]] = vector.mask %[[VAL_9]] { vector.transfer_read %{{.*}} {in_bounds = [true, true], permutation_map = #{{.*}}} : tensor<?x?xf32>, vector<4x8xf32> } : vector<8xi1> -> vector<4x8xf32>
+// CHECK:           %[[VAL_12:.*]] = vector.create_mask %[[VAL_4]], %[[VAL_6]] : vector<4x8xi1>
+// CHECK:           %[[VAL_13:.*]] = vector.mask %[[VAL_12]] { vector.transfer_read %{{.*}} {in_bounds = [true, true]} : tensor<?x?xf32>, vector<4x8xf32> } : vector<4x8xi1> -> vector<4x8xf32>
+// CHECK:           %[[VAL_15:.*]] = vector.mask %[[VAL_12]] { vector.transfer_read %{{.*}} {in_bounds = [true, true]} : tensor<?x?xf32>, vector<4x8xf32> } : vector<4x8xi1> -> vector<4x8xf32>
+// CHECK:           %[[VAL_16:.*]] = arith.addf %[[VAL_10]], %[[VAL_13]] : vector<4x8xf32>
+// CHECK:           %[[VAL_18:.*]] = vector.mask %[[VAL_12]] { vector.transfer_write %{{.*}} {in_bounds = [true, true]} : vector<4x8xf32>, tensor<?x?xf32> } : vector<4x8xi1> -> tensor<?x?xf32>
+
+transform.sequence failures(propagate) {
+^bb1(%arg1: !pdl.operation):
+  %0 = transform.structured.match ops{["linalg.generic"]} in %arg1
+  transform.structured.masked_vectorize %0 vector_sizes [4, 8]
+}
+
+// -----
+
+// This is a regression test. This IR cannot be vectorized, but
+// structured.vectorize should nevertheless succeed.
+
+#map = affine_map<(d0) -> (d0)>
+// CHECK-LABEL:   @not_vectorizable
+func.func @not_vectorizable(%arg0: tensor<1x?xf32>, %arg1: index, %arg2: index, %arg3: index) -> tensor<1x128xf32> {
+  %0 = tensor.empty() : tensor<1x128xf32>
+  %1 = scf.for %arg5 = %arg2 to %arg1 step %arg3 iter_args(%arg6 = %0) -> (tensor<1x128xf32>) {
+    %extracted_slice = tensor.extract_slice %arg6[0, 0] [1, %arg1] [1, 1] : tensor<1x128xf32> to tensor<?xf32>
+    %expanded = tensor.expand_shape %extracted_slice [[0, 1]] : tensor<?xf32> into tensor<1x?xf32>
+    %extracted_slice_0 = tensor.extract_slice %arg0[0, %arg3] [1, %arg2] [1, 1] : tensor<1x?xf32> to tensor<?xf32>
+    %extracted_slice_1 = tensor.extract_slice %expanded[0, %arg3] [1, %arg2] [1, 1] : tensor<1x?xf32> to tensor<?xf32>
+    %2 = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel"]} ins(%extracted_slice_0 : tensor<?xf32>) outs(%extracted_slice_1 : tensor<?xf32>) {
+    ^bb0(%in: f32, %out: f32):
+      %3 = arith.addf %in, %out : f32
+      linalg.yield %3 : f32
+    } -> tensor<?xf32>
+    %inserted_slice = tensor.insert_slice %2 into %expanded[0, %arg3] [1, %arg2] [1, 1] : tensor<?xf32> into tensor<1x?xf32>
+    %collapsed = tensor.collapse_shape %inserted_slice [[0, 1]] : tensor<1x?xf32> into tensor<?xf32>
+    %inserted_slice_2 = tensor.insert_slice %collapsed into %arg6[0, 0] [1, %arg1] [1, 1] : tensor<?xf32> into tensor<1x128xf32>
+    scf.yield %inserted_slice_2 : tensor<1x128xf32>
+  }
+  return %1 : tensor<1x128xf32>
+}
+transform.sequence failures(propagate) {
+^bb0(%arg0: !pdl.operation):
+  %0 = transform.structured.match ops{["func.func"]} in %arg0
+  %1 = transform.structured.vectorize %0
 }

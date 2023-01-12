@@ -59,6 +59,8 @@ public:
                        Attribute metadata = Attribute());
 
   // Types.
+  FloatType getFloat8E5M2Type();
+  FloatType getFloat8E4M3FNType();
   FloatType getBF16Type();
   FloatType getF16Type();
   FloatType getF32Type();
@@ -69,7 +71,10 @@ public:
   IndexType getIndexType();
 
   IntegerType getI1Type();
+  IntegerType getI2Type();
+  IntegerType getI4Type();
   IntegerType getI8Type();
+  IntegerType getI16Type();
   IntegerType getI32Type();
   IntegerType getI64Type();
   IntegerType getIntegerType(unsigned width);
@@ -385,7 +390,7 @@ public:
   }
 
   /// Return the block the current insertion point belongs to.  Note that the
-  /// the insertion point is not necessarily the end of the block.
+  /// insertion point is not necessarily the end of the block.
   Block *getInsertionBlock() const { return block; }
 
   /// Returns the current insertion point of the builder.
@@ -403,15 +408,15 @@ public:
   /// 'parent'. `locs` contains the locations of the inserted arguments, and
   /// should match the size of `argTypes`.
   Block *createBlock(Region *parent, Region::iterator insertPt = {},
-                     TypeRange argTypes = llvm::None,
-                     ArrayRef<Location> locs = llvm::None);
+                     TypeRange argTypes = std::nullopt,
+                     ArrayRef<Location> locs = std::nullopt);
 
   /// Add new block with 'argTypes' arguments and set the insertion point to the
   /// end of it. The block is placed before 'insertBefore'. `locs` contains the
   /// locations of the inserted arguments, and should match the size of
   /// `argTypes`.
-  Block *createBlock(Block *insertBefore, TypeRange argTypes = llvm::None,
-                     ArrayRef<Location> locs = llvm::None);
+  Block *createBlock(Block *insertBefore, TypeRange argTypes = std::nullopt,
+                     ArrayRef<Location> locs = std::nullopt);
 
   //===--------------------------------------------------------------------===//
   // Operation Creation
@@ -482,8 +487,7 @@ public:
 
   /// Overload to create or fold a single result operation.
   template <typename OpTy, typename... Args>
-  typename std::enable_if<OpTy::template hasTrait<OpTrait::OneResult>(),
-                          Value>::type
+  std::enable_if_t<OpTy::template hasTrait<OpTrait::OneResult>(), Value>
   createOrFold(Location location, Args &&...args) {
     SmallVector<Value, 1> results;
     createOrFold<OpTy>(results, location, std::forward<Args>(args)...);
@@ -492,8 +496,7 @@ public:
 
   /// Overload to create or fold a zero result operation.
   template <typename OpTy, typename... Args>
-  typename std::enable_if<OpTy::template hasTrait<OpTrait::ZeroResults>(),
-                          OpTy>::type
+  std::enable_if_t<OpTy::template hasTrait<OpTrait::ZeroResults>(), OpTy>
   createOrFold(Location location, Args &&...args) {
     auto op = create<OpTy>(location, std::forward<Args>(args)...);
     SmallVector<Value, 0> unused;

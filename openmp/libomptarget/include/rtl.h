@@ -14,7 +14,11 @@
 #define _OMPTARGET_RTL_H
 
 #include "omptarget.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/DynamicLibrary.h"
+
+#include "omptarget.h"
 
 #include <list>
 #include <map>
@@ -45,7 +49,7 @@ struct RTLInfoTy {
   typedef int32_t(data_exchange_ty)(int32_t, void *, int32_t, void *, int64_t);
   typedef int32_t(data_exchange_async_ty)(int32_t, void *, int32_t, void *,
                                           int64_t, __tgt_async_info *);
-  typedef int32_t(data_delete_ty)(int32_t, void *);
+  typedef int32_t(data_delete_ty)(int32_t, void *, int32_t);
   typedef int32_t(run_region_ty)(int32_t, void *, void **, ptrdiff_t *,
                                  int32_t);
   typedef int32_t(run_region_async_ty)(int32_t, void *, void **, ptrdiff_t *,
@@ -58,6 +62,7 @@ struct RTLInfoTy {
                                             __tgt_async_info *);
   typedef int64_t(init_requires_ty)(int64_t);
   typedef int32_t(synchronize_ty)(int32_t, __tgt_async_info *);
+  typedef int32_t(query_async_ty)(int32_t, __tgt_async_info *);
   typedef int32_t (*register_lib_ty)(__tgt_bin_desc *);
   typedef int32_t(supports_empty_images_ty)();
   typedef void(print_device_info_ty)(int32_t);
@@ -78,7 +83,7 @@ struct RTLInfoTy {
                                 // to be registered with this RTL.
   int32_t NumberOfDevices = -1; // Number of devices this RTL deals with.
 
-  void *LibraryHandler = nullptr;
+  std::unique_ptr<llvm::sys::DynamicLibrary> LibraryHandler;
 
 #ifdef OMPTARGET_DEBUG
   std::string RTLName;
@@ -108,6 +113,7 @@ struct RTLInfoTy {
   run_team_region_async_ty *run_team_region_async = nullptr;
   init_requires_ty *init_requires = nullptr;
   synchronize_ty *synchronize = nullptr;
+  query_async_ty *query_async = nullptr;
   register_lib_ty register_lib = nullptr;
   register_lib_ty unregister_lib = nullptr;
   supports_empty_images_ty *supports_empty_images = nullptr;
@@ -124,6 +130,8 @@ struct RTLInfoTy {
 
   // Are there images associated with this RTL.
   bool IsUsed = false;
+
+  llvm::DenseSet<const __tgt_device_image *> UsedImages;
 
   // Mutex for thread-safety when calling RTL interface functions.
   // It is easier to enforce thread-safety at the libomptarget level,
@@ -163,6 +171,9 @@ struct RTLsTy {
   // (i.e. the library attempts to load the RTLs (plugins) only once).
   std::once_flag InitFlag;
   void loadRTLs(); // not thread-safe
+
+private:
+  static bool attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL);
 };
 
 /// Map between the host entry begin and the translation table. Each

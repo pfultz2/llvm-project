@@ -321,8 +321,8 @@ add_entrypoint_object(
     pthread_setname_np.h
   DEPENDS
     libc.include.pthread
-    libc.src.__support.CPP.array_ref
-    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.stringstream
     libc.src.__support.threads.thread
 )
 
@@ -334,7 +334,7 @@ add_entrypoint_object(
     pthread_getname_np.h
   DEPENDS
     libc.include.pthread
-    libc.src.__support.CPP.array_ref
+    libc.src.__support.CPP.span
     libc.src.__support.CPP.stringstream
     libc.src.__support.threads.thread
 )
@@ -385,4 +385,27 @@ add_entrypoint_object(
     libc.include.errno
     libc.include.pthread
     libc.src.__support.threads.thread
+)
+
+add_entrypoint_object(
+  pthread_once
+  SRCS
+    pthread_once.cpp
+  HDRS
+    pthread_once.h
+  DEPENDS
+    libc.include.pthread
+    libc.src.__support.threads.callonce
+)
+
+add_entrypoint_object(
+  pthread_atfork
+  SRCS
+    pthread_atfork.cpp
+  HDRS
+    pthread_atfork.h
+  DEPENDS
+    libc.include.errno
+    libc.include.pthread
+    libc.src.__support.threads.fork_callbacks
 )

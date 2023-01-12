@@ -16,7 +16,7 @@
 #include "mlir/Analysis/Presburger/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/AffineExprVisitor.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/Support/LLVM.h"
@@ -26,6 +26,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include <optional>
 
 #define DEBUG_TYPE "affine-structures"
 
@@ -157,7 +158,7 @@ FlatAffineValueConstraints::FlatAffineValueConstraints(IntegerSet set)
                                                      /*numLocals=*/0)) {
 
   // Resize values.
-  values.resize(getNumDimAndSymbolVars(), None);
+  values.resize(getNumDimAndSymbolVars(), std::nullopt);
 
   // Flatten expressions and add them to the constraint system.
   std::vector<SmallVector<int64_t, 8>> flatExprs;
@@ -271,14 +272,12 @@ void FlatAffineValueConstraints::reset(unsigned newNumDims,
 
 unsigned FlatAffineValueConstraints::appendDimVar(ValueRange vals) {
   unsigned pos = getNumDimVars();
-  insertVar(VarKind::SetDim, pos, vals);
-  return pos;
+  return insertVar(VarKind::SetDim, pos, vals);
 }
 
 unsigned FlatAffineValueConstraints::appendSymbolVar(ValueRange vals) {
   unsigned pos = getNumSymbolVars();
-  insertVar(VarKind::Symbol, pos, vals);
-  return pos;
+  return insertVar(VarKind::Symbol, pos, vals);
 }
 
 unsigned FlatAffineValueConstraints::insertDimVar(unsigned pos,
@@ -296,7 +295,7 @@ unsigned FlatAffineValueConstraints::insertVar(VarKind kind, unsigned pos,
   unsigned absolutePos = IntegerPolyhedron::insertVar(kind, pos, num);
 
   if (kind != VarKind::Local) {
-    values.insert(values.begin() + absolutePos, num, None);
+    values.insert(values.begin() + absolutePos, num, std::nullopt);
     assert(values.size() == getNumDimAndSymbolVars());
   }
 
@@ -314,7 +313,7 @@ unsigned FlatAffineValueConstraints::insertVar(VarKind kind, unsigned pos,
   // If a Value is provided, insert it; otherwise use None.
   for (unsigned i = 0; i < num; ++i)
     values.insert(values.begin() + absolutePos + i,
-                  vals[i] ? Optional<Value>(vals[i]) : None);
+                  vals[i] ? Optional<Value>(vals[i]) : std::nullopt);
 
   assert(values.size() == getNumDimAndSymbolVars());
   return absolutePos;
@@ -641,6 +640,33 @@ FlatAffineValueConstraints::addAffineForOpDomain(AffineForOp forOp) {
                   forOp.getUpperBoundOperands());
 }
 
+LogicalResult FlatAffineValueConstraints::addAffineParallelOpDomain(
+    AffineParallelOp parallelOp) {
+  size_t ivPos = 0;
+  for (auto iv : parallelOp.getIVs()) {
+    unsigned pos;
+    if (!findVar(iv, &pos)) {
+      assert(false && "variable expected for the IV value");
+      return failure();
+    }
+
+    AffineMap lowerBound = parallelOp.getLowerBoundMap(ivPos);
+    if (lowerBound.isConstant())
+      addBound(BoundType::LB, pos, lowerBound.getSingleConstantResult());
+    else if (failed(addBound(BoundType::LB, pos, lowerBound,
+                             parallelOp.getLowerBoundsOperands())))
+      return failure();
+
+    auto upperBound = parallelOp.getUpperBoundMap(ivPos);
+    if (upperBound.isConstant())
+      addBound(BoundType::UB, pos, upperBound.getSingleConstantResult());
+    else if (failed(addBound(BoundType::UB, pos, upperBound,
+                             parallelOp.getUpperBoundsOperands())))
+      return failure();
+  }
+  return success();
+}
+
 LogicalResult
 FlatAffineValueConstraints::addDomainFromSliceMaps(ArrayRef<AffineMap> lbMaps,
                                                    ArrayRef<AffineMap> ubMaps,
@@ -757,14 +783,14 @@ static bool detectAsMod(const FlatAffineValueConstraints &cst, unsigned pos,
   // Check for the aforementioned conditions in each equality.
   for (unsigned curEquality = 0, numEqualities = cst.getNumEqualities();
        curEquality < numEqualities; curEquality++) {
-    int64_t coefficientAtPos = cst.atEq(curEquality, pos);
+    int64_t coefficientAtPos = cst.atEq64(curEquality, pos);
     // If current equality does not involve `var_r`, continue to the next
     // equality.
     if (coefficientAtPos == 0)
       continue;
 
     // Constant term should be 0 in this equality.
-    if (cst.atEq(curEquality, cst.getNumCols() - 1) != 0)
+    if (cst.atEq64(curEquality, cst.getNumCols() - 1) != 0)
       continue;
 
     // Traverse through the equality and construct the dividend expression
@@ -786,7 +812,7 @@ static bool detectAsMod(const FlatAffineValueConstraints &cst, unsigned pos,
       // Ignore var_r.
       if (curVar == pos)
         continue;
-      int64_t coefficientOfCurVar = cst.atEq(curEquality, curVar);
+      int64_t coefficientOfCurVar = cst.atEq64(curEquality, curVar);
       // Ignore vars that do not contribute to the current equality.
       if (coefficientOfCurVar == 0)
         continue;
@@ -827,8 +853,8 @@ static bool detectAsMod(const FlatAffineValueConstraints &cst, unsigned pos,
 
     // Express `var_r` as `var_n % divisor` and store the expression in `memo`.
     if (quotientCount >= 1) {
-      auto ub = cst.getConstantBound(FlatAffineValueConstraints::BoundType::UB,
-                                     dimExpr.getPosition());
+      auto ub = cst.getConstantBound64(
+          FlatAffineValueConstraints::BoundType::UB, dimExpr.getPosition());
       // If `var_n` has an upperbound that is less than the divisor, mod can be
       // eliminated altogether.
       if (ub && *ub < divisor)
@@ -912,7 +938,7 @@ FlatAffineValueConstraints::getLowerAndUpperBound(
   lbExprs.reserve(lbIndices.size() + eqIndices.size());
   // Lower bound expressions.
   for (auto idx : lbIndices) {
-    auto ineq = getInequality(idx);
+    auto ineq = getInequality64(idx);
     // Extract the lower bound (in terms of other coeff's + const), i.e., if
     // i - j + 1 >= 0 is the constraint, 'pos' is for i the lower bound is j
     // - 1.
@@ -930,7 +956,7 @@ FlatAffineValueConstraints::getLowerAndUpperBound(
   ubExprs.reserve(ubIndices.size() + eqIndices.size());
   // Upper bound expressions.
   for (auto idx : ubIndices) {
-    auto ineq = getInequality(idx);
+    auto ineq = getInequality64(idx);
     // Extract the upper bound (in terms of other coeff's + const).
     addCoeffs(ineq, ub);
     auto expr =
@@ -943,7 +969,7 @@ FlatAffineValueConstraints::getLowerAndUpperBound(
   // Equalities. It's both a lower and a upper bound.
   SmallVector<int64_t, 4> b;
   for (auto idx : eqIndices) {
-    auto eq = getEquality(idx);
+    auto eq = getEquality64(idx);
     addCoeffs(eq, b);
     if (eq[pos + offset] > 0)
       std::transform(b.begin(), b.end(), b.begin(), std::negate<int64_t>());
@@ -1006,20 +1032,19 @@ void FlatAffineValueConstraints::getSliceBounds(
       if (memo[pos])
         continue;
 
-      auto lbConst = getConstantBound(BoundType::LB, pos);
-      auto ubConst = getConstantBound(BoundType::UB, pos);
+      auto lbConst = getConstantBound64(BoundType::LB, pos);
+      auto ubConst = getConstantBound64(BoundType::UB, pos);
       if (lbConst.has_value() && ubConst.has_value()) {
         // Detect equality to a constant.
-        if (lbConst.value() == ubConst.value()) {
-          memo[pos] = getAffineConstantExpr(lbConst.value(), context);
+        if (*lbConst == *ubConst) {
+          memo[pos] = getAffineConstantExpr(*lbConst, context);
           changed = true;
           continue;
         }
 
         // Detect an variable as modulo of another variable w.r.t a
         // constant.
-        if (detectAsMod(*this, pos, lbConst.value(), ubConst.value(), memo,
-                        context)) {
+        if (detectAsMod(*this, pos, *lbConst, *ubConst, memo, context)) {
           changed = true;
           continue;
         }
@@ -1044,7 +1069,7 @@ void FlatAffineValueConstraints::getSliceBounds(
       for (j = 0, e = getNumVars(); j < e; ++j) {
         if (j == pos)
           continue;
-        int64_t c = atEq(idx, j);
+        int64_t c = atEq64(idx, j);
         if (c == 0)
           continue;
         // If any of the involved IDs hasn't been found yet, we can't proceed.
@@ -1058,8 +1083,8 @@ void FlatAffineValueConstraints::getSliceBounds(
         continue;
 
       // Add constant term to AffineExpr.
-      expr = expr + atEq(idx, getNumVars());
-      int64_t vPos = atEq(idx, pos);
+      expr = expr + atEq64(idx, getNumVars());
+      int64_t vPos = atEq64(idx, pos);
       assert(vPos != 0 && "expected non-zero here");
       if (vPos > 0)
         expr = (-expr).floorDiv(vPos);
@@ -1080,7 +1105,7 @@ void FlatAffineValueConstraints::getSliceBounds(
   // Set the lower and upper bound maps for all the variables that were
   // computed as affine expressions of the rest as the "detected expr" and
   // "detected expr + 1" respectively; set the undetected ones to null.
-  Optional<FlatAffineValueConstraints> tmpClone;
+  std::optional<FlatAffineValueConstraints> tmpClone;
   for (unsigned pos = 0; pos < num; pos++) {
     unsigned numMapDims = getNumDimVars() - num;
     unsigned numMapSymbols = getNumSymbolVars();
@@ -1118,21 +1143,20 @@ void FlatAffineValueConstraints::getSliceBounds(
       if (!lbMap || lbMap.getNumResults() > 1) {
         LLVM_DEBUG(llvm::dbgs()
                    << "WARNING: Potentially over-approximating slice lb\n");
-        auto lbConst = getConstantBound(BoundType::LB, pos + offset);
+        auto lbConst = getConstantBound64(BoundType::LB, pos + offset);
         if (lbConst.has_value()) {
-          lbMap =
-              AffineMap::get(numMapDims, numMapSymbols,
-                             getAffineConstantExpr(lbConst.value(), context));
+          lbMap = AffineMap::get(numMapDims, numMapSymbols,
+                                 getAffineConstantExpr(*lbConst, context));
         }
       }
       if (!ubMap || ubMap.getNumResults() > 1) {
         LLVM_DEBUG(llvm::dbgs()
                    << "WARNING: Potentially over-approximating slice ub\n");
-        auto ubConst = getConstantBound(BoundType::UB, pos + offset);
+        auto ubConst = getConstantBound64(BoundType::UB, pos + offset);
         if (ubConst.has_value()) {
           ubMap = AffineMap::get(
               numMapDims, numMapSymbols,
-              getAffineConstantExpr(ubConst.value() + ubAdjustment, context));
+              getAffineConstantExpr(*ubConst + ubAdjustment, context));
         }
       }
     }
@@ -1353,9 +1377,9 @@ void FlatAffineValueConstraints::swapVar(unsigned posA, unsigned posB) {
 
   // Treat value of a local variable as None.
   if (getVarKindAt(posA) == VarKind::Local)
-    values[posB] = None;
+    values[posB] = std::nullopt;
   else if (getVarKindAt(posB) == VarKind::Local)
-    values[posA] = None;
+    values[posA] = std::nullopt;
   else
     std::swap(values[posA], values[posB]);
 }
@@ -1394,7 +1418,7 @@ void FlatAffineValueConstraints::clearAndCopyFrom(
   } else {
     *static_cast<IntegerRelation *>(this) = other;
     values.clear();
-    values.resize(getNumDimAndSymbolVars(), None);
+    values.resize(getNumDimAndSymbolVars(), std::nullopt);
   }
 }
 
@@ -1488,7 +1512,7 @@ void FlatAffineValueConstraints::getIneqAsAffineValueMap(
   auto localExprs = ArrayRef<AffineExpr>(memo).take_back(getNumLocalVars());
 
   // Compute the AffineExpr lower/upper bound for this inequality.
-  ArrayRef<int64_t> inequality = getInequality(ineqPos);
+  SmallVector<int64_t, 8> inequality = getInequality64(ineqPos);
   SmallVector<int64_t, 8> bound;
   bound.reserve(getNumCols() - 1);
   // Everything other than the coefficient at `pos`.
@@ -1562,10 +1586,10 @@ FlatAffineValueConstraints::getAsIntegerSet(MLIRContext *context) const {
   exprs.reserve(getNumConstraints());
 
   for (unsigned i = 0, e = getNumEqualities(); i < e; ++i)
-    exprs.push_back(getAffineExprFromFlatForm(getEquality(i), numDims, numSyms,
-                                              localExprs, context));
+    exprs.push_back(getAffineExprFromFlatForm(getEquality64(i), numDims,
+                                              numSyms, localExprs, context));
   for (unsigned i = 0, e = getNumInequalities(); i < e; ++i)
-    exprs.push_back(getAffineExprFromFlatForm(getInequality(i), numDims,
+    exprs.push_back(getAffineExprFromFlatForm(getInequality64(i), numDims,
                                               numSyms, localExprs, context));
   return IntegerSet::get(numDims, numSyms, exprs, eqFlags);
 }
@@ -1672,12 +1696,12 @@ void FlatAffineRelation::compose(const FlatAffineRelation &other) {
   // Add and match domain of `rel` to domain of `this`.
   for (unsigned i = 0, e = rel.getNumDomainDims(); i < e; ++i)
     if (relMaybeValues[i].has_value())
-      setValue(i, relMaybeValues[i].value());
+      setValue(i, *relMaybeValues[i]);
   // Add and match range of `this` to range of `rel`.
   for (unsigned i = 0, e = getNumRangeDims(); i < e; ++i) {
     unsigned rangeIdx = rel.getNumDomainDims() + i;
     if (thisMaybeValues[rangeIdx].has_value())
-      rel.setValue(rangeIdx, thisMaybeValues[rangeIdx].value());
+      rel.setValue(rangeIdx, *thisMaybeValues[rangeIdx]);
   }
 
   // Append `this` to `rel` and simplify constraints.
@@ -1800,6 +1824,34 @@ LogicalResult mlir::getRelationFromMap(const AffineValueMap &map,
   for (unsigned i = rel.getNumDimVars(), e = rel.getNumDimAndSymbolVars();
        i < e; ++i)
     rel.setValue(i, map.getOperand(i - rel.getNumRangeDims()));
+
+  return success();
+}
+
+LogicalResult
+mlir::getMultiAffineFunctionFromMap(AffineMap map,
+                                    MultiAffineFunction &multiAff) {
+  FlatAffineValueConstraints cst;
+  std::vector<SmallVector<int64_t, 8>> flattenedExprs;
+  LogicalResult result = getFlattenedAffineExprs(map, &flattenedExprs, &cst);
+
+  if (result.failed())
+    return failure();
+
+  DivisionRepr divs = cst.getLocalReprs();
+  assert(divs.hasAllReprs() &&
+         "AffineMap cannot produce divs without local representation");
+
+  // TODO: We shouldn't have to do this conversion.
+  Matrix mat(map.getNumResults(), map.getNumInputs() + divs.getNumDivs() + 1);
+  for (unsigned i = 0, e = flattenedExprs.size(); i < e; ++i)
+    for (unsigned j = 0, f = flattenedExprs[i].size(); j < f; ++j)
+      mat(i, j) = flattenedExprs[i][j];
+
+  multiAff = MultiAffineFunction(
+      PresburgerSpace::getRelationSpace(map.getNumDims(), map.getNumResults(),
+                                        map.getNumSymbols(), divs.getNumDivs()),
+      mat, divs);
 
   return success();
 }

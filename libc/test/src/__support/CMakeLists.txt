@@ -1,6 +1,16 @@
 add_libc_testsuite(libc_support_unittests)
 
 add_libc_unittest(
+  blockstore_test
+  SUITE
+    libc_support_unittests
+  SRCS
+    blockstore_test.cpp
+  DEPENDS
+    libc.src.__support.blockstore
+)
+
+add_libc_unittest(
   endian_test
   SUITE
     libc_support_unittests
@@ -18,7 +28,7 @@ add_libc_unittest(
   high_precision_decimal_test.cpp
   DEPENDS
     libc.src.__support.high_precision_decimal
-    libc.src.__support.CPP.uint128
+    libc.src.__support.uint128
 )
 
 add_libc_unittest(
@@ -29,7 +39,7 @@ add_libc_unittest(
     str_to_float_test.cpp
   DEPENDS
     libc.src.__support.str_to_float
-    libc.src.__support.CPP.uint128
+    libc.src.__support.uint128
 )
 
 add_libc_unittest(
@@ -54,13 +64,14 @@ add_libc_unittest(
 )
 
 add_libc_unittest(
-  uint128_test
+  uint_test
   SUITE
     libc_support_unittests
   SRCS
-    uint128_test.cpp
+    uint_test.cpp
   DEPENDS
-    libc.src.__support.CPP.uint
+    libc.src.__support.uint
+    libc.src.__support.CPP.optional
 )
 
 add_libc_unittest(
@@ -80,7 +91,7 @@ add_executable(
 
 target_link_libraries(libc_str_to_float_comparison_test
   PRIVATE
-    llvmlibc
+    "${LIBC_TARGET}"
 )
 
 add_executable(
@@ -100,3 +111,4 @@ add_custom_command(TARGET libc_str_to_float_comparison_test
 add_subdirectory(CPP)
 add_subdirectory(File)
 add_subdirectory(OSUtil)
+add_subdirectory(FPUtil)

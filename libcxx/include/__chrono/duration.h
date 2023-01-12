@@ -151,7 +151,7 @@ typename enable_if
 >::type
 floor(const duration<_Rep, _Period>& __d)
 {
-    _ToDuration __t = duration_cast<_ToDuration>(__d);
+    _ToDuration __t = chrono::duration_cast<_ToDuration>(__d);
     if (__t > __d)
         __t = __t - _ToDuration{1};
     return __t;
@@ -166,7 +166,7 @@ typename enable_if
 >::type
 ceil(const duration<_Rep, _Period>& __d)
 {
-    _ToDuration __t = duration_cast<_ToDuration>(__d);
+    _ToDuration __t = chrono::duration_cast<_ToDuration>(__d);
     if (__t < __d)
         __t = __t + _ToDuration{1};
     return __t;
@@ -181,7 +181,7 @@ typename enable_if
 >::type
 round(const duration<_Rep, _Period>& __d)
 {
-    _ToDuration __lower = floor<_ToDuration>(__d);
+    _ToDuration __lower = chrono::floor<_ToDuration>(__d);
     _ToDuration __upper = __lower + _ToDuration{1};
     auto __lowerDiff = __d - __lower;
     auto __upperDiff = __upper - __d;
@@ -278,18 +278,18 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR typename common_type<duration>::type operator+() const {return typename common_type<duration>::type(*this);}
     _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR typename common_type<duration>::type operator-() const {return typename common_type<duration>::type(-__rep_);}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator++()      {++__rep_; return *this;}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration  operator++(int)   {return duration(__rep_++);}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator--()      {--__rep_; return *this;}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration  operator--(int)   {return duration(__rep_--);}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator++()      {++__rep_; return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration  operator++(int)   {return duration(__rep_++);}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator--()      {--__rep_; return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration  operator--(int)   {return duration(__rep_--);}
 
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator+=(const duration& __d) {__rep_ += __d.count(); return *this;}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator-=(const duration& __d) {__rep_ -= __d.count(); return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator+=(const duration& __d) {__rep_ += __d.count(); return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator-=(const duration& __d) {__rep_ -= __d.count(); return *this;}
 
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator*=(const rep& __rhs) {__rep_ *= __rhs; return *this;}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator/=(const rep& __rhs) {__rep_ /= __rhs; return *this;}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator%=(const rep& __rhs) {__rep_ %= __rhs; return *this;}
-    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX14 duration& operator%=(const duration& __rhs) {__rep_ %= __rhs.count(); return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator*=(const rep& __rhs) {__rep_ *= __rhs; return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator/=(const rep& __rhs) {__rep_ /= __rhs; return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator%=(const rep& __rhs) {__rep_ %= __rhs; return *this;}
+    _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_SINCE_CXX17 duration& operator%=(const duration& __rhs) {__rep_ %= __rhs.count(); return *this;}
 
     // special values
 

@@ -4,7 +4,9 @@ namespace PR47043 {
   template<typename T> concept True = true;
   template<typename ...T> concept AllTrue1 = True<T>; // expected-error {{expression contains unexpanded parameter pack 'T'}}
   template<typename ...T> concept AllTrue2 = (True<T> && ...);
+  template<typename ...T> concept AllTrue3 = (bool)(True<T> & ...);
   static_assert(AllTrue2<int, float, char>);
+  static_assert(AllTrue3<int, float, char>);
 }
 
 namespace PR47025 {
@@ -59,11 +61,10 @@ namespace P0857R0 {
     x.operator()<false>(); // expected-error {{no matching member function}}
   }
 
-  // FIXME: This is valid under P0857R0.
   template<typename T> concept C = true;
-  template<template<typename T> requires C<T> typename U> struct X {}; // expected-error {{requires 'class'}} expected-error 0+{{}}
+  template<template<typename T> requires C<T> typename U> struct X {};
   template<typename T> requires C<T> struct Y {};
-  X<Y> xy; // expected-error {{no template named 'X'}}
+  X<Y> xy;
 }
 
 namespace PR50306 {
@@ -256,6 +257,12 @@ C auto **j1 = g();   // expected-error {{deduced type 'int' does not satisfy 'C'
 C auto **&j2 = g();  // expected-error {{deduced type 'int' does not satisfy 'C'}}
 C auto **&&j3 = g(); // expected-error {{deduced type 'int' does not satisfy 'C'}}
 }
+
+namespace GH55567 {
+template<class, template <class> class> concept C = true;
+template <class> struct S {};
+void f(C<GH55567::S> auto);
+} // namespace GH55567
 
 namespace SubConstraintChecks {
 template <typename T>
@@ -640,3 +647,143 @@ constexpr bool test() {
 }
 } // namespace InlineFriendOperator
 
+namespace ClassTemplateInstantiation {
+struct Type;
+template < typename A, typename B, typename C>
+  concept ConstraintF = false; // #ConstraintF
+template < typename A, typename B, typename C>
+  concept ConstraintT = true;
+
+template < typename T > struct Parent {
+  template < typename U, ConstraintT<T, U> > struct ChildT{};
+  ChildT<Type, Type> CauseInstT;
+  template < typename U, ConstraintF<T, U> > struct ChildF{};// #ChildF
+  ChildF<Type, Type> CauseInstF; //#CauseInstF
+};
+
+// expected-error@#CauseInstF{{constraints not satisfied for class template}}
+// expected-note@+3{{in instantiation of template class}}
+// expected-note@#ChildF{{evaluated to false}}
+// expected-note@#ConstraintF{{because 'false' evaluated to false}}
+Parent<int> Inst;
+} // namespace ClassTemplateInstantiation
+
+namespace SelfFriend {
+  template<class T>
+  concept Constraint = requires (T i) { (*i); };
+  template<class T>
+  concept Constraint2 = requires (T i) { (*i); };
+
+  template<Constraint T>
+  struct Iterator {
+    template <Constraint>
+    friend class Iterator;
+    void operator*();
+  };
+
+  template<Constraint T> // #ITER_BAD
+  struct IteratorBad {
+    template <Constraint2>//#ITER_BAD_FRIEND
+    friend class IteratorBad;
+    void operator*();
+  };
+
+  Iterator<int*> I;
+  Iterator<char*> I2;
+  IteratorBad<int*> I3; // expected-error@#ITER_BAD_FRIEND{{constraint differs}}
+                        // expected-note@-1{{in instantiation of template class}}
+                        // expected-note@#ITER_BAD{{previous template declaration}}
+} // namespace SelfFriend
+
+
+namespace ConstrainedMemberVarTemplate {
+template <long Size> struct Container {
+  static constexpr long arity = Size;
+  template <typename U>
+  requires(sizeof(U) == arity) // #CMVT_REQ
+  using var_templ = int;
+};
+Container<4>::var_templ<int> inst;
+Container<5>::var_templ<int> inst_fail;
+// expected-error@-1{{constraints not satisfied for alias template 'var_templ'}}
+// expected-note@#CMVT_REQ{{because 'sizeof(int) == arity' (4 == 5) evaluated to false}}
+} // namespace ConstrainedMemberVarTemplate
+
+// These should not diagnose, where we were unintentionally doing so before by
+// checking trailing requires clause twice, yet not having the ability to the
+// 2nd time, since it was no longer a dependent variant.
+namespace InheritedFromPartialSpec {
+template<class C>
+constexpr bool Check = true;
+
+template<typename T>
+struct Foo {
+  template<typename U>
+    Foo(U&&) requires (Check<U>){}
+  template<typename U>
+    void MemFunc(U&&) requires (Check<U>){}
+  template<typename U>
+    static void StaticMemFunc(U&&) requires (Check<U>){}
+  ~Foo() requires (Check<T>){}
+};
+
+template<>
+  struct Foo<void> : Foo<int> {
+    using Foo<int>::Foo;
+    using Foo<int>::MemFunc;
+    using Foo<int>::StaticMemFunc;
+  };
+
+void use() {
+  Foo<void> F {1.1};
+  F.MemFunc(1.1);
+  Foo<void>::StaticMemFunc(1.1);
+}
+
+template<typename T>
+struct counted_iterator {
+  constexpr auto operator->() const noexcept requires false {
+    return T::Invalid;
+  };
+};
+
+template<class _Ip>
+concept __has_member_pointer = requires { typename _Ip::pointer; };
+
+template<class>
+struct __iterator_traits_member_pointer_or_arrow_or_void { using type = void; };
+template<__has_member_pointer _Ip>
+struct __iterator_traits_member_pointer_or_arrow_or_void<_Ip> { using type = typename _Ip::pointer; };
+
+template<class _Ip>
+  requires requires(_Ip& __i) { __i.operator->(); } && (!__has_member_pointer<_Ip>)
+struct __iterator_traits_member_pointer_or_arrow_or_void<_Ip> {
+  using type = decltype(declval<_Ip&>().operator->());
+};
+
+
+void use2() {
+  __iterator_traits_member_pointer_or_arrow_or_void<counted_iterator<int>> f;
+}
+}// namespace InheritedFromPartialSpec
+
+namespace GH48182 {
+template<typename, typename..., typename = int> // expected-error{{template parameter pack must be the last template parameter}}
+concept invalid = true;
+
+template<typename> requires invalid<int> // expected-error{{use of undeclared identifier 'invalid'}}
+no errors are printed
+;
+
+static_assert(invalid<int> also here ; // expected-error{{use of undeclared identifier 'invalid'}}
+
+int foo() {
+    bool b;
+    b = invalid<int> not just in declarations; // expected-error{{expected ';' after expression}}
+                                               // expected-error@-1{{use of undeclared identifier 'invalid'}}
+                                               // expected-error@-2{{expected ';' after expression}}
+                                               // expected-error@-3{{use of undeclared identifier 'just'}}
+                                               // expected-error@-4{{unknown type name 'in'}}
+    return b;
+}
+} // namespace GH48182

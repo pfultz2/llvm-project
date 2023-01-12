@@ -126,6 +126,33 @@ public:
   GCNMaxILPSchedStrategy(const MachineSchedContext *C);
 };
 
+class ScheduleMetrics {
+  unsigned ScheduleLength;
+  unsigned BubbleCycles;
+
+public:
+  ScheduleMetrics() {}
+  ScheduleMetrics(unsigned L, unsigned BC)
+      : ScheduleLength(L), BubbleCycles(BC) {}
+  unsigned getLength() const { return ScheduleLength; }
+  unsigned getBubbles() const { return BubbleCycles; }
+  unsigned getMetric() const {
+    unsigned Metric = (BubbleCycles * ScaleFactor) / ScheduleLength;
+    // Metric is zero if the amount of bubbles is less than 1% which is too
+    // small. So, return 1.
+    return Metric ? Metric : 1;
+  }
+  static const unsigned ScaleFactor;
+};
+
+inline raw_ostream &operator<<(raw_ostream &OS, const ScheduleMetrics &Sm) {
+  dbgs() << "\n Schedule Metric (scaled by "
+         << ScheduleMetrics::ScaleFactor
+         << " ) is: " << Sm.getMetric() << " [ " << Sm.getBubbles() << "/"
+         << Sm.getLength() << " ]\n";
+  return OS;
+}
+
 class GCNScheduleDAGMILive final : public ScheduleDAGMILive {
   friend class GCNSchedStage;
   friend class OccInitialScheduleStage;
@@ -161,6 +188,9 @@ class GCNScheduleDAGMILive final : public ScheduleDAGMILive {
 
   // Regions that has the same occupancy as the latest MinOccupancy
   BitVector RegionsWithMinOcc;
+
+  // Regions that have IGLP instructions (SCHED_GROUP_BARRIER or IGLP_OPT).
+  BitVector RegionsWithIGLPInstrs;
 
   // Region live-in cache.
   SmallVector<GCNRPTracker::LiveRegSet, 32> LiveIns;
@@ -231,6 +261,8 @@ protected:
   // RP after scheduling the current region.
   GCNRegPressure PressureAfter;
 
+  std::vector<std::unique_ptr<ScheduleDAGMutation>> SavedMutations;
+
   GCNSchedStage(GCNSchedStageID StageID, GCNScheduleDAGMILive &DAG);
 
 public:
@@ -253,6 +285,13 @@ public:
 
   // Check result of scheduling.
   void checkScheduling();
+
+  // computes the given schedule virtual execution time in clocks
+  ScheduleMetrics getScheduleMetrics(const std::vector<SUnit> &InputSchedule);
+  ScheduleMetrics getScheduleMetrics(const GCNScheduleDAGMILive &DAG);
+  unsigned computeSUnitReadyCycle(const SUnit &SU, unsigned CurrCycle,
+                                  DenseMap<unsigned, unsigned> &ReadyCycles,
+                                  const TargetSchedModel &SM);
 
   // Returns true if scheduling should be reverted.
   virtual bool shouldRevertScheduling(unsigned WavesAfter);
@@ -278,8 +317,6 @@ public:
 
 class UnclusteredHighRPStage : public GCNSchedStage {
 private:
-  std::vector<std::unique_ptr<ScheduleDAGMutation>> SavedMutations;
-
   // Save the initial occupancy before starting this stage.
   unsigned InitialOccupancy;
 
@@ -353,6 +390,22 @@ public:
 
   ILPInitialScheduleStage(GCNSchedStageID StageID, GCNScheduleDAGMILive &DAG)
       : GCNSchedStage(StageID, DAG) {}
+};
+
+class GCNPostScheduleDAGMILive final : public ScheduleDAGMI {
+private:
+  std::vector<std::unique_ptr<ScheduleDAGMutation>> SavedMutations;
+
+  bool HasIGLPInstrs = false;
+
+public:
+  void schedule() override;
+
+  void finalizeSchedule() override;
+
+  GCNPostScheduleDAGMILive(MachineSchedContext *C,
+                           std::unique_ptr<MachineSchedStrategy> S,
+                           bool RemoveKillFlags);
 };
 
 } // End namespace llvm
