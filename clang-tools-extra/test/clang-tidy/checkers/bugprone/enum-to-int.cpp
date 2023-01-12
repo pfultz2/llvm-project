@@ -1,11 +1,14 @@
 // RUN: %check_clang_tidy -std=c++11-or-later --fix-notes %s bugprone-enum-to-int %t
 
-enum A { e1,
-         e2 };
+enum A { 
+  e1,
+  e2 
+};
 
-  enum B : unsigned int {
-    e3, e4
-  };
+enum B : unsigned int {
+  e3,
+  e4
+};
 
 struct bar {
   bar(int);

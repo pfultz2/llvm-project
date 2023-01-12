@@ -30,10 +30,10 @@ void EnumToIntCheck::registerMatchers(MatchFinder *Finder) {
 
 void EnumToIntCheck::check(const MatchFinder::MatchResult &Result) {
   if (const auto *MatchedExpr = Result.Nodes.getNodeAs<Expr>("x")) {
-    diag(MatchedExpr->getBeginLoc(), "enum is implictly converted to an integral")
+    diag(MatchedExpr->getBeginLoc(),
+         "enum is implictly converted to an integral")
         << MatchedExpr->getSourceRange();
-    auto Note = diag(MatchedExpr->getBeginLoc(),
-                     "insert an explicit cast",
+    auto Note = diag(MatchedExpr->getBeginLoc(), "insert an explicit cast",
                      DiagnosticIDs::Note);
     std::string TypeName = MatchedExpr->getType().getAsString();
     if (Result.Context->getLangOpts().CPlusPlus11) {
@@ -45,7 +45,8 @@ void EnumToIntCheck::check(const MatchFinder::MatchResult &Result) {
                                      getLangOpts()),
           ")");
     } else {
-      Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(), "(" + TypeName + ")");
+      Note << FixItHint::CreateInsertion(MatchedExpr->getBeginLoc(),
+                                         "(" + TypeName + ")");
     }
   }
 }
